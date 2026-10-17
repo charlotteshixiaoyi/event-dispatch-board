@@ -1,4 +1,6 @@
-# Charlotte Shi's Dispatch Board
+# Event EMS Dispatch Board
+
+Created by: Charlotte Shi, EMT-B
 
 A browser-based status board for event medical dispatch. Displays team call signs, operational status, assigned locations, time in status, and the current Level number. Runs locally from a single HTML file without internet connection.
 
