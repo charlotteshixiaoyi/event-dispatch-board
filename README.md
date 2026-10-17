@@ -1,6 +1,6 @@
 # Event EMS Dispatch Board
 
-Created by: Charlotte Shi, EMT-B
+Created by: Charlotte Shi, EMT-B (<charlotteshixiaoyi@berkeley.edu>)
 
 A browser-based status board for event medical dispatch. Displays team call signs, operational status, assigned locations, time in status, and the current Level number. Runs locally from a single HTML file without internet connection.
 
