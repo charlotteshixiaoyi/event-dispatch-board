@@ -5,8 +5,8 @@
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "theme_color": "#102438",
-  "background_color": "#edf2f7",
+  "theme_color": "#17232c",
+  "background_color": "#f3f5f6",
   "icons": [
     {"src": "./dispatch-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
     {"src": "./dispatch-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"}
