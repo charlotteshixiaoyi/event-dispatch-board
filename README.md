@@ -1,29 +1,25 @@
 # Event EMS Dispatch Board
 
-Created by: Charlotte Shi, EMT-B (<charlotteshixiaoyi@berkeley.edu>)
+Created by Charlotte Shi, EMT-B. Track team locations, dispatch status, and time in status during an event.
 
-A browser-based status board for event medical dispatch. Displays team call signs, operational status, assigned locations, time in status, and the current Level number. Runs locally from a single HTML file without internet connection.
+## Preview locally
 
-## Features
+Run `python3 -m http.server 8000` from this directory and open `http://localhost:8000/`. No build step or external dependencies are required.
 
-- **Unit status:** Color-coded indicators for Roaming, On scene, Transporting, and At clinic.
-- **Time in status:** An elapsed timer beneath each call sign, reset upon a status change.
-- **Status and assignment updates:** Click or tap a team to cycle its status. Reassign locations by drag and drop or through the team roster dropdowns.
-- **Field assignments:** Configurable field locations and a separate main medical clinic area.
-- **Fixed posts:** A crosshatched area for teams assigned to stationary posts, including pit or table service. These teams remain at their assigned post and are unavailable to respond to calls elsewhere.
-- **Level number:** A live count of teams marked Roaming in field operations, excluding fixed-post assignments.
-- **Other Helpful Features:** Pacific time with seconds, shift notes, undo, and automatic browser-local saving.
+## Use with GitHub Pages
 
-## Operation
+Commit the contents of this package to your Pages source folder. Keep `index.html`, `.nojekyll`, and the other files together. In **Settings → Pages**, choose **Deploy from a branch** and select the branch and folder containing the files. GitHub Pages accepts the branch root or its `/docs` folder. If Pages is already configured, a push to its publishing source can publish these files automatically.
 
-1. Download the HTML file and open it in a browser with JavaScript enabled.
-2. Remove the sample teams and enter the assigned call signs.
-3. Configure field locations and update team status and assignments throughout the operational period.
+[GitHub Pages publishing source documentation](https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site)
 
-Selecting a team tile cycles through **Roaming → On scene → Transporting → At clinic → Roaming**. Use the roster's Status dropdown for direct selection. Teams marked At clinic appear in the main medical clinic area.
+## Run a shift
 
-## Data storage
+- Add teams by radio call sign and add any field locations you need.
+- Tap a tile to cycle through Roaming, On scene, Transporting, and At clinic. Use the roster to set a specific status or location.
+- Move a team by dragging its tile on desktop or by using the roster's location menu.
+- Level counts roaming field teams and excludes teams at fixed posts.
+- Use **Board tools** to load sample teams, download or restore a backup, or clear the board. Undo is available for the current page session.
 
-Team assignments, statuses, status start times, and shift notes save in the current browser when local storage is available. Saved data does not modify the HTML file or synchronize across devices. Distributing the file does not transfer the active board. Undo history is limited to the current page session.
+Teams, locations, timers, and shift notes save in the current browser profile for this site. Use a backup to transfer a board to another browser or device. Keep patient information out of shift notes and keep backup files out of the repository.
 
-Mobile use requires a browser that executes JavaScript. Static file previews do not support board controls or timers.
+On supported browsers the app can be installed and reopened offline after its first successful online load.
