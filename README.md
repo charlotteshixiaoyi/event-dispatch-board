@@ -2,6 +2,8 @@
 
 Created by Charlotte Shi, EMT-B. Track team locations, dispatch status, and time in status during an event.
 
+[Open the Dispatch Board](https://charlotteshixiaoyi.github.io/event-dispatch-board/)
+
 ## Preview locally
 
 Run `python3 -m http.server 8000` from this directory and open `http://localhost:8000/`. No build step or external dependencies are required.
