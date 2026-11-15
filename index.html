@@ -3,21 +3,21 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#17232c">
+    <meta name="theme-color" content="#142824">
     <meta name="description" content="Track event EMS unit status, post assignments, and time in status.">
     <title>Event EMS Dispatch Board</title>
     <link rel="icon" href="./dispatch.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="./dispatch-192.png">
     <link rel="manifest" href="./manifest.webmanifest">
-    <link rel="stylesheet" href="./board.css?v=5">
-    <script src="./board.js?v=5" defer></script>
+    <link rel="stylesheet" href="./board.css?v=6">
+    <script src="./board.js?v=6" defer></script>
 </head>
 <body>
     <header class="masthead">
         <div class="wrap">
             <div class="brand">
                 <img src="./dispatch.svg" width="36" height="36" alt="">
-                <div><p class="eyebrow">Event EMS</p><h1>EMS Dispatch Board</h1></div>
+                <div><p class="eyebrow">Event EMS</p><h1>Dispatch board</h1></div>
             </div>
             <div class="header-status">
                 <div class="level-meter header-level" data-empty="true" role="status" aria-atomic="true">
@@ -36,7 +36,7 @@
         <section class="overview" aria-label="Dispatch overview">
             <div class="metric level-meter" data-empty="true">
                 <span class="metric-label">Level</span><strong class="metric-value" id="level-number" data-level-value>0</strong>
-                <span class="metric-caption">Units available</span>
+                <span class="metric-caption">Available</span>
             </div>
             <div class="metric onscene"><span class="metric-label">On scene</span><strong class="metric-value" id="onscene-total">0</strong></div>
             <div class="metric transporting"><span class="metric-label">Transporting</span><strong class="metric-value" id="transporting-total">0</strong></div>
@@ -44,21 +44,15 @@
         </section>
         <div class="action-bar">
             <form class="controls" id="team-form">
-                <input id="newTeamInput" aria-label="New unit call sign" placeholder="Call sign" maxlength="40" required>
-                <button type="submit" class="primary-btn">+ Add unit</button>
+                <div class="input-field">
+                    <label for="newTeamInput">Call sign</label>
+                    <input type="text" id="newTeamInput" maxlength="40" autocomplete="off" required>
+                </div>
+                <button type="submit" class="primary-btn"><span aria-hidden="true">+</span> Add unit</button>
                 <button type="button" id="undo-button" class="secondary-btn" disabled title="Undo last change (Ctrl/Cmd+Z)">Undo</button>
             </form>
             <p id="form-error" class="form-error" role="alert" hidden></p>
-            <span id="save-indicator" role="status">Saved on this browser</span>
-        </div>
-        <div class="board-meta">
-            <div class="legend" aria-label="Unit statuses">
-                <span class="roaming"><i class="dot" aria-hidden="true"></i>Roaming</span>
-                <span class="onscene"><i class="dot" aria-hidden="true"></i>On scene</span>
-                <span class="transporting"><i class="dot" aria-hidden="true"></i>Transporting</span>
-                <span class="atclinic"><i class="dot" aria-hidden="true"></i>At Medical</span>
-            </div>
-            <p>Tap a unit to cycle status. Drag to reassign a post, or use the roster.</p>
+            <span id="save-indicator" role="status">Saved</span>
         </div>
         <div class="main-layout">
             <section class="zone-container" id="field-zone" aria-labelledby="field-title">
@@ -67,8 +61,11 @@
                     <span class="team-count" id="field-count">0 units</span>
                 </div>
                 <form class="location-form" id="location-form">
-                    <input id="newLocationInput" aria-label="New field post" placeholder="Post name" maxlength="60" required>
-                    <button type="submit" class="secondary-btn">+ Add post</button>
+                    <div class="input-field">
+                        <label for="newLocationInput">Post name</label>
+                        <input type="text" id="newLocationInput" maxlength="60" autocomplete="off" required>
+                    </div>
+                    <button type="submit" class="secondary-btn"><span aria-hidden="true">+</span> Add post</button>
                 </form>
                 <div id="field-locations" class="field-locations"></div>
             </section>
@@ -82,17 +79,16 @@
                 </section>
                 <section class="zone-container" aria-labelledby="meal-break-title">
                     <div class="zone-title meal-break-heading">
-                        <h2 id="meal-break-title">Meal breaks</h2>
+                        <h2 id="meal-break-title">Meal breaks <span class="section-meta">30 min</span></h2>
                         <span class="team-count" id="meal-break-count" hidden></span>
                     </div>
-                    <p class="meal-break-caption">30-minute meal breaks. Clear the break when the unit is back on assignment.</p>
-                    <p id="meal-break-empty" class="meal-break-caption">Add units to track their meal breaks.</p>
+                    <p id="meal-break-empty" class="empty-state">No units</p>
                     <ul id="meal-break-list" class="meal-break-list" aria-label="Unit meal breaks"></ul>
                 </section>
             </div>
         </div>
         <section class="team-roster" aria-labelledby="roster-title">
-            <div class="roster-heading"><h2 id="roster-title">Unit roster</h2><p>Update unit status or post</p></div>
+            <div class="roster-heading"><h2 id="roster-title">Unit roster</h2></div>
             <div class="roster-scroll">
                 <table class="roster-table" aria-label="Unit status and post assignments">
                     <colgroup><col class="team-col"><col class="status-col"><col><col class="remove-col"></colgroup>
@@ -100,21 +96,21 @@
                     <tbody id="team-details"></tbody>
                 </table>
             </div>
-            <p id="roster-empty" class="roster-empty" hidden>Add a unit by its radio call sign.</p>
+            <p id="roster-empty" class="empty-state" hidden>No units</p>
         </section>
-        <section class="handoff-panel" aria-labelledby="handoff-title">
-            <h2 id="handoff-title">Shift handoff log</h2>
-            <p class="handoff-caption">Post reassignments, unit status changes, and meal breaks. Newest first, in Pacific time.</p>
-            <p id="handoff-empty" class="handoff-caption">Unit activity will appear here.</p>
-            <div class="handoff-scroll" id="handoff-scroll" role="region" aria-label="Recorded unit activity" tabindex="0" hidden>
-                <ol id="handoff-list"></ol>
-            </div>
-        </section>
-        <section class="notes-panel" aria-labelledby="notes-title">
-            <h2 id="notes-title"><label for="shift-notes">Shift notes</label></h2>
-            <p>Use for post coverage and shift handoff. Keep patient information out of the board.</p>
-            <textarea id="shift-notes" class="shift-log" maxlength="10000" placeholder="e.g. Assign SAM1 to Gate 2 at 18:00"></textarea>
-        </section>
+        <div class="activity-layout">
+            <section class="timestamp-panel" aria-labelledby="timestamp-title">
+                <h2 id="timestamp-title">Time stamp</h2>
+                <p id="timestamp-empty" class="empty-state">No activity</p>
+                <div class="timestamp-scroll" id="timestamp-scroll" role="region" aria-label="Recorded unit activity" tabindex="0" hidden>
+                    <ol id="timestamp-list"></ol>
+                </div>
+            </section>
+            <section class="notes-panel" aria-labelledby="notes-title">
+                <h2 id="notes-title"><label for="shift-notes">Shift notes</label></h2>
+                <textarea id="shift-notes" class="shift-log" maxlength="10000"></textarea>
+            </section>
+        </div>
         <details class="board-tools">
             <summary>Board tools</summary>
             <div class="tool-buttons">
@@ -122,12 +118,11 @@
                 <button type="button" class="secondary-btn" id="import-board">Restore backup</button>
                 <input type="file" id="backup-file" accept=".json,application/json" hidden>
                 <button type="button" class="secondary-btn" id="demo-board">Load sample units</button>
-                <button type="button" class="secondary-btn" id="clear-board">Clear board</button>
+                <button type="button" class="secondary-btn danger-btn" id="clear-board">Clear board</button>
             </div>
-            <p>Backups include units, posts, timers, meal breaks, shift notes, and the handoff log. Restore replaces the current board.</p>
             <p id="tool-message" role="status" hidden></p>
         </details>
-        <footer class="app-footer"><p>Created by Charlotte Shi, EMT-B</p><p>Changes stay in this browser. Use a backup to transfer a board.</p></footer>
+        <footer class="app-footer"><p>Created by Charlotte Shi, EMT-B</p></footer>
     </main>
 </body>
 </html>

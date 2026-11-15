@@ -11,6 +11,7 @@ const sampleTeams = [
 ];
 let teams = [];
 let savedNotes = '';
+// Preserve this storage key for existing saved boards and backups.
 let handoffLog = [];
 const undoHistory = [];
 let notesCheckpoint = null;
@@ -78,7 +79,7 @@ function saveBoard() {
     try {
         localStorage.setItem(storageKey, serializeBoard());
         indicator.dataset.error = 'false';
-        indicator.textContent = 'Saved on this browser';
+        indicator.textContent = 'Saved';
     } catch {
         indicator.dataset.error = 'true';
         indicator.textContent = 'Changes could not be saved. Download a backup before closing.';
@@ -133,7 +134,7 @@ function isOnMealBreak(team) {
     return team.mealBreak != null && team.mealBreak.returnedAt === null;
 }
 
-function recordHandoff(team, message, at) {
+function recordTimestamp(team, message, at) {
     handoffLog.push({ at, team: team.name, message });
 }
 
@@ -151,15 +152,15 @@ function recordTeamChange(team, previous, at) {
     if (team.status !== previous.status) {
         changes.push(`${statusNames[previous.status]} → ${statusNames[team.status]}`);
     }
-    if (changes.length) recordHandoff(team, changes.join(' · '), at);
+    if (changes.length) recordTimestamp(team, changes.join(' · '), at);
 }
 
-function renderHandoffLog() {
+function renderTimestamps() {
     const empty = handoffLog.length === 0;
-    document.getElementById('handoff-empty').hidden = !empty;
-    document.getElementById('handoff-scroll').hidden = empty;
-    document.getElementById('handoff-list').innerHTML = handoffLog.slice().reverse().map(({ at, team, message }) => {
-        const timestamp = `${handoffDateFormatter.format(at)} · ${pacificFormatter.format(at)}`;
+    document.getElementById('timestamp-empty').hidden = !empty;
+    document.getElementById('timestamp-scroll').hidden = empty;
+    document.getElementById('timestamp-list').innerHTML = handoffLog.slice().reverse().map(({ at, team, message }) => {
+        const timestamp = `${timestampDateFormatter.format(at)} · ${pacificFormatter.format(at)}`;
         return `<li><time datetime="${new Date(at).toISOString()}">${timestamp}</time><span><strong>${escapeHTML(team)}</strong> · ${escapeHTML(message)}</span></li>`;
     }).join('');
 }
@@ -229,10 +230,10 @@ function renderMealBreaks(sortedTeams) {
                     const returnedAt = Math.max(now, team.mealBreak.startedAt);
                     team.mealBreak.returnedAt = returnedAt;
                     const early = returnedAt - team.mealBreak.startedAt < mealBreakDuration;
-                    recordHandoff(team, early ? 'Returned early from meal break' : 'Returned from meal break', returnedAt);
+                    recordTimestamp(team, early ? 'Returned early from meal break' : 'Returned from meal break', returnedAt);
                 } else {
                     team.mealBreak = { startedAt: now, returnedAt: null };
-                    recordHandoff(team, 'Started meal break', now);
+                    recordTimestamp(team, 'Started meal break', now);
                 }
                 refresh();
                 const updatedRow = document.getElementById(row.id);
@@ -248,7 +249,7 @@ function renderMealBreaks(sortedTeams) {
 function setBadgeLabel(badge, team) {
     const location = teamLocationName(team);
     const mealBreakLabel = isOnMealBreak(team) ? ' · On meal break' : '';
-    badge.title = `${team.name}: ${statusNames[team.status]} · ${location}${mealBreakLabel}. Tap to change to ${statusNames[nextStatus(team.status)]}.`;
+    badge.title = `${team.name}: ${statusNames[team.status]} · ${location}${mealBreakLabel}`;
     badge.setAttribute('aria-label', badge.title);
 }
 
@@ -288,12 +289,11 @@ function renderBoard() {
         count.className = 'location-count';
         const total = teams.filter(t => t.zone === 'field-zone' && t.location === location.id).length;
         count.textContent = `${total} unit${total !== 1 ? 's' : ''}`;
-        if (location.id === 'pit-table-service') count.title = 'Fixed-post units do not count toward Level';
         header.appendChild(count);
         if (!builtInLocations.some(l => l.id === location.id)) {
             const remove = document.createElement('button');
             remove.className = 'remove-location'; remove.textContent = '×';
-            remove.title = 'Remove post; units will have no post assigned';
+            remove.title = 'Remove post';
             remove.setAttribute('aria-label', `Remove post ${location.name}`);
             remove.addEventListener('click', () => removeLocation(location.id));
             header.appendChild(remove);
@@ -338,7 +338,7 @@ function renderBoard() {
             </select></td>
             <td><select id="location-${team.id}" class="location-select" aria-label="Post for ${escapeHTML(team.name)}">
                 ${fieldLocations().map(l => `<option value="${l.id}" ${team.zone === 'field-zone' && team.location === l.id ? 'selected' : ''}>${escapeHTML(l.name)}</option>`).join('')}
-                <option value="clinic-zone" ${team.zone === 'clinic-zone' ? 'selected' : ''}>Main medical clinic</option>
+                <option value="clinic-zone" ${team.zone === 'clinic-zone' ? 'selected' : ''}>Main Medical</option>
             </select></td>
             <td><button type="button" title="Remove unit" aria-label="Remove ${escapeHTML(team.name)}" class="delete-btn">×</button></td>`;
         row.querySelector('.delete-btn').addEventListener('click', () => deleteTeam(team.id));
@@ -353,7 +353,7 @@ function renderBoard() {
         details.appendChild(row);
     });
     renderMealBreaks(sortedTeams);
-    renderHandoffLog();
+    renderTimestamps();
     const fieldCount = teams.filter(t => t.zone === 'field-zone').length;
     const clinicCount = teams.length - fieldCount;
     const roamingCount = teams.filter(t => t.status === 'roaming' && t.zone === 'field-zone'
@@ -474,7 +474,7 @@ const pacificFormatter = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/Los_Angeles', hour: '2-digit', minute: '2-digit',
     second: '2-digit', hourCycle: 'h23', timeZoneName: 'short'
 });
-const handoffDateFormatter = new Intl.DateTimeFormat('en-US', {
+const timestampDateFormatter = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/Los_Angeles', year: 'numeric', month: 'short', day: 'numeric'
 });
 function updateClock(now = new Date()) {
@@ -569,16 +569,16 @@ backupFile.addEventListener('change', async () => {
 document.getElementById('demo-board').addEventListener('click', () => {
     if ((teams.length || locations.length || notes.value || handoffLog.length) && !confirm('Replace this board with sample units?')) return;
     replaceBoard(readBoard({ teams: sampleTeams, locations: [], notes: '' }));
-    showToolMessage('Sample units loaded. Use Clear board before starting a live shift.');
+    showToolMessage('Sample units loaded.');
 });
 
 document.getElementById('clear-board').addEventListener('click', () => {
-    if (!confirm('Clear all units, custom posts, shift notes, and the handoff log?')) return;
+    if (!confirm('Clear all units, custom posts, shift notes, and time stamp entries?')) return;
     replaceBoard({ teams: [], locations: [], notes: '', handoffLog: [] });
-    showToolMessage('Board cleared. You can undo this change.');
+    showToolMessage('Board cleared.');
 });
 
-if ('serviceWorker' in navigator) {
+if ('serviceWorker' in navigator && ['http:', 'https:'].includes(location.protocol)) {
     navigator.serviceWorker.register('./sw.js').catch(() => {
         // The dispatch board is usable online if service workers are blocked.
     });
