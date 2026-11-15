@@ -277,7 +277,7 @@ body[data-venue="bill-graham"] .field-location:not(.venue-board-post) { grid-col
 .venue-selection-ring { fill: none; stroke: var(--teal); stroke-width: 2px; opacity: 0; }
 .venue-map-unit.is-selected .venue-selection-ring, .venue-map-unit:focus-visible .venue-selection-ring, .venue-map-unit:hover .venue-selection-ring { opacity: 1; }
 .venue-map-unit:focus-visible { outline: 0; }
-.venue-marker-name { fill: #203c2c; font-family: system-ui, sans-serif; font-size: 14px; font-weight: 750; paint-order: stroke; stroke: #fff; stroke-width: 3px; stroke-linejoin: round; }
+.venue-marker-name { fill: #203c2c; font-family: system-ui, sans-serif; font-size: 16px; font-weight: 750; paint-order: stroke; stroke: #fff; stroke-width: 3px; stroke-linejoin: round; }
 .venue-map-footer { padding: 8px 12px; border-top: 1px solid #edf1ee; flex-shrink: 0; }
 .venue-legend { display: flex; flex-wrap: wrap; gap: 6px 12px; }
 .venue-legend span { display: inline-flex; align-items: center; gap: 5px; color: #79877d; font-size: .61rem; }

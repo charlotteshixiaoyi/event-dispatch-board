@@ -288,7 +288,7 @@ body[data-venue="bill-graham"] .field-location:not(.venue-board-post) { grid-col
 .venue-selection-ring { fill: none; stroke: var(--teal); stroke-width: 2px; opacity: 0; }
 .venue-map-unit.is-selected .venue-selection-ring, .venue-map-unit:focus-visible .venue-selection-ring, .venue-map-unit:hover .venue-selection-ring { opacity: 1; }
 .venue-map-unit:focus-visible { outline: 0; }
-.venue-marker-name { fill: #203c2c; font-family: system-ui, sans-serif; font-size: 14px; font-weight: 750; paint-order: stroke; stroke: #fff; stroke-width: 3px; stroke-linejoin: round; }
+.venue-marker-name { fill: #203c2c; font-family: system-ui, sans-serif; font-size: 16px; font-weight: 750; paint-order: stroke; stroke: #fff; stroke-width: 3px; stroke-linejoin: round; }
 .venue-map-footer { padding: 8px 12px; border-top: 1px solid #edf1ee; flex-shrink: 0; }
 .venue-legend { display: flex; flex-wrap: wrap; gap: 6px 12px; }
 .venue-legend span { display: inline-flex; align-items: center; gap: 5px; color: #79877d; font-size: .61rem; }
@@ -1339,131 +1339,105 @@ function renderVenueMap() {
     const visible = venueLevels.filter(level => level.id !== '3' || showThirdFloor);
     const focused = venueFloor !== 'all';
     const floors = focused ? visible.filter(level => level.id === venueFloor) : [...visible].reverse();
-    const atPost = new Map();
-    for (const team of teams) {
-        const id = venuePostForTeam(team)?.id;
-        if (!id) continue;
-        if (!atPost.has(id)) atPost.set(id, []);
-        atPost.get(id).push(team);
-    }
-    for (const members of atPost.values()) members.sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true }));
-    const center = 620;
-    const panelWidth = 240;
-    const cellWidth = 76;
-    const lineHeight = 14;
-    const sideDistance = Math.max(300, 220 * Math.cos(angle) * 1.65);
-    const larkin = center - sideDistance;
-    const polk = center + sideDistance;
-    const pitPosition = pitSides[pitSide];
-    const pitX = Math.max(larkin + panelWidth + 18, Math.min(polk - panelWidth - 18,
-        center + pitPosition.x * Math.cos(angle) + 65 * Math.sin(angle)));
-    // Every post owns its full grid. Rows and floor bands grow together, so busy
-    // posts never spill into a neighboring destination or hide any team.
-    const makePanel = (id, x, label) => {
-        const post = id === 'clinic-zone' ? mainMedicalPost : venuePosts.find(item => item.id === id);
-        const members = atPost.get(id) || [];
-        const maxColumns = post.side === 'Basement' ? 10 : 3;
-        const columns = members.length === 4 ? 2 : Math.min(maxColumns, Math.max(1, members.length));
-        const rows = [];
-        for (let index = 0; index < members.length; index += columns) {
-            const cells = members.slice(index, index + columns).map(team => {
-                const chars = Array.from(team.name);
-                const lines = [];
-                for (let start = 0; start < chars.length; start += 8) lines.push(chars.slice(start, start + 8).join(''));
-                return { team, lines };
-            });
-            const lines = Math.max(1, ...cells.map(cell => cell.lines.length));
-            rows.push({ cells, lines, height: lines * lineHeight + 28 });
-        }
-        const gridHeight = rows.reduce((total, row) => total + row.height, 0);
-        const height = Math.max(32, 20 + gridHeight);
-        return { id, x, label: label || post.side.toUpperCase(), post, members, columns, rows,
-            width: post.side === 'Basement' ? 900 : panelWidth, height, gridHeight };
-    };
-    const positionColumn = (panels, top) => {
-        let next = top;
-        for (const panel of panels) { panel.top = next; next += panel.height + 10; }
-        return next - top - 10;
-    };
+    const atPost = id => teams.filter(team => venuePostForTeam(team)?.id === id)
+        .sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true }));
+    const rowHeight = 44;
+    const columns = (post, count) => post.side === 'Basement' ? Math.min(5, Math.max(1, count))
+        : post.fixed ? Math.min(2, Math.max(1, count))
+        : post.side === 'Grove' && !['1', '2'].includes(post.level) ? Math.min(3, Math.max(1, count)) : 1;
     let cursor = 12;
     const layout = floors.map(level => {
-        const top = cursor;
-        const backTop = top + 34;
-        let panels;
-        if (level.id === 'b') {
-            const basement = makePanel('venue-b-basement', center);
-            basement.top = backTop;
-            panels = [basement];
-        } else {
-            const backColumns = [
-                [makePanel(`venue-${level.id}-larkin`, larkin)],
-                level.id === '4' ? [makePanel('clinic-zone', polk, '+ MEDICAL'), makePanel('venue-4-polk', polk)]
-                    : [makePanel(`venue-${level.id}-polk`, polk)]
-            ];
-            if (level.id === '1') backColumns.push([makePanel('venue-1-pit', pitX, 'PIT')]);
-            const backHeight = Math.max(...backColumns.map(column => positionColumn(column, backTop)));
-            const front = level.id === '1'
-                ? [makePanel('venue-1-table-service', larkin + 30, 'TABLE SERVICE'),
-                    makePanel('venue-1-grove', center), makePanel('venue-1-roaming', polk - 30, 'ROAMING')]
-                : level.id === '2'
-                    ? [makePanel('venue-2-grove', center - 155), makePanel('venue-2-roaming', center + 155, 'ROAMING')]
-                    : [makePanel(`venue-${level.id}-grove`, center)];
-            const frontHeight = Math.max(...front.map(panel => panel.height));
-            for (const panel of front) { panel.top = backTop + backHeight + 12; panel.height = frontHeight; }
-            panels = [...backColumns.flat(), ...front];
-        }
-        const bottom = Math.max(...panels.map(panel => panel.top + panel.height)) + 16;
-        const skew = Math.sin(angle) * 24;
-        const left = Math.min(...panels.map(panel => panel.x - panel.width / 2)) - Math.abs(skew) - 16;
-        const right = Math.max(...panels.map(panel => panel.x + panel.width / 2)) + Math.abs(skew) + 16;
-        const slab = [[left + skew, top + 8], [right + skew, top + 16],
-            [right - skew, bottom + 8], [left - skew, bottom]];
-        cursor = bottom + 32;
-        return { level, top, panels, slab };
+        const rowCounts = venuePosts.filter(post => post.level === level.id).map(post => {
+            const count = atPost(post.id).length;
+            return Math.ceil(count / columns(post, count));
+        });
+        if (level.id === '4') rowCounts.push(atPost('clinic-zone').length + atPost('venue-4-polk').length);
+        const band = Math.max(154, 110 + Math.max(0, ...rowCounts) * rowHeight);
+        const item = { level, y: cursor + 80, band };
+        cursor += band;
+        return item;
     });
-    const height = Math.max(focused ? 240 : 0, cursor);
-    const points = coords => coords.map(point => point.map(n => n.toFixed(1)).join(',')).join(' ');
-    const rectangle = (left, top, width, height) => [[left, top], [left + width, top], [left + width, top + height], [left, top + height]];
+    const height = Math.max(focused ? 240 : 0, cursor + 12);
+    const project = (x, z, y, bottom = 0) => [500 + x * Math.cos(angle) - z * Math.sin(angle), y + (x * Math.sin(angle) + z * Math.cos(angle)) * .3 + bottom];
+    const points = (coords, y, bottom = 0, stretch = 0) => coords.map(([x, z]) => {
+        const point = project(x, z, y, bottom);
+        point[1] += stretch * (z + 110) / 220;
+        return point.map(n => n.toFixed(1)).join(',');
+    }).join(' ');
+    const box = (x1, z1, x2, z2) => [[x1, z1], [x2, z1], [x2, z2], [x1, z2]];
+    const outer = box(-270, -110, 270, 110);
     const ballColors = {
         roaming: ['#b5efd1', '#278159', '#145c3e'], onscene: ['#ffbfc9', '#ce405b', '#96273e'],
         transporting: ['#ffe1a8', '#b27a1e', '#805008'], atclinic: ['#b6dcff', '#3b81c9', '#245993'],
         meal: ['#e0e6e2', '#87958c', '#5c6a61'], fixed: ['#eceff0', '#b8c0c4', '#909ba1']
     };
     const gradients = Object.entries(ballColors).map(([status, colors]) => `<radialGradient id="venue-ball-${status}" cx="32%" cy="25%" r="75%"><stop offset="0" stop-color="${colors[0]}"/><stop offset=".55" stop-color="${colors[1]}"/><stop offset="1" stop-color="${colors[2]}"/></radialGradient>`).join('');
-    let drawing = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 ${height}" role="group" aria-labelledby="venue-svg-title"><title id="venue-svg-title">Bill Graham Civic Auditorium · ${focused ? floors[0].name : '3D view'}</title><defs>${gradients}</defs>`;
-    for (const { level, top, panels, slab } of [...layout].reverse()) {
-        const count = panels.reduce((total, panel) => total + panel.members.length, 0);
-        drawing += `<g class="venue-floor" data-floor="${level.id}"><text x="24" y="${top + 49}" class="venue-floor-name">${level.name}</text><text x="24" y="${top + 69}" class="venue-floor-detail">${count} unit${count === 1 ? '' : 's'}</text>`;
-        for (const [a, b] of [[slab[1], slab[2]], [slab[2], slab[3]], [slab[3], slab[0]]]) {
-            drawing += `<polygon points="${points([a, b, [b[0], b[1] + 6], [a[0], a[1] + 6]])}" class="venue-slab-edge"/>`;
+    let drawing = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 ${height}" role="group" aria-labelledby="venue-svg-title"><title id="venue-svg-title">Bill Graham Civic Auditorium · ${focused ? floors[0].name : '3D view'}</title><defs>${gradients}</defs>`;
+    for (const { level, y } of [...layout].reverse()) {
+        const count = teams.filter(team => venuePostForTeam(team)?.level === level.id).length;
+        const basementStretch = level.id === 'b' ? Math.max(0, Math.ceil(count / 5) - 1) * rowHeight : 0;
+        const floorPoint = (x, z, bottom = 0) => {
+            const point = project(x, z, y, bottom);
+            point[1] += basementStretch * (z + 110) / 220;
+            return point;
+        };
+        drawing += `<g class="venue-floor" data-floor="${level.id}"><text x="24" y="${y - 2}" class="venue-floor-name">${level.name}</text><text x="24" y="${y + 18}" class="venue-floor-detail">${count} unit${count === 1 ? '' : 's'}</text>`;
+        for (const edge of [[outer[1], outer[2]], [outer[2], outer[3]], [outer[3], outer[0]]]) {
+            const face = [...edge.map(([x, z]) => floorPoint(x, z)), ...edge.slice().reverse().map(([x, z]) => floorPoint(x, z, 6))];
+            drawing += `<polygon points="${face.map(p => p.join(',')).join(' ')}" class="venue-slab-edge"/>`;
         }
-        drawing += `<polygon points="${points(slab)}" class="venue-slab"/>`;
-        if (level.id === '1') drawing += `<polygon points="${points(rectangle(center - 120, top + 13, 240, 15))}" class="venue-stage"/><text x="${center}" y="${top + 24}" text-anchor="middle" class="venue-stage-label">STAGE</text>`;
-        // Surfaces paint first and labels stay upright as the floor angle changes.
-        for (const panel of panels) {
-            const { id, post, members, x, top, width, height } = panel;
-            const description = id === 'venue-1-pit'
+        drawing += `<polygon points="${points(outer, y, 0, basementStretch)}" class="venue-slab"/>`;
+        if (level.id === '1') {
+            const [sx, sy] = project(0, -96, y);
+            drawing += `<polygon points="${points(box(-120, -107, 120, -85), y)}" class="venue-stage"/><text x="${sx}" y="${sy + 3}" text-anchor="middle" class="venue-stage-label">STAGE</text>`;
+        }
+        const groveHasRoaming = ['1', '2'].includes(level.id);
+        const groveHasTableService = level.id === '1';
+        const shapes = level.id === 'b' ? [
+            { id: 'venue-b-basement', side: 'Basement', coords: outer, x: 0, z: 0 }
+        ] : [
+            { id: `venue-${level.id}-polk`, side: 'Polk', coords: box(170, level.id === '4' ? 0 : -110, 270, 110), x: 220, z: level.id === '4' ? 65 : 0 },
+            { id: `venue-${level.id}-larkin`, side: 'Larkin', coords: box(-270, -110, -170, 110), x: -220, z: 0 },
+            { id: `venue-${level.id}-grove`, side: 'Grove', coords: box(groveHasTableService ? -65 : -165, 62, groveHasTableService ? 65 : groveHasRoaming ? -4 : 165, 110), x: groveHasTableService ? 0 : groveHasRoaming ? -83 : 0, z: 89 }
+        ];
+        if (groveHasRoaming) shapes.push({ id: `venue-${level.id}-roaming`, side: 'Grove', label: 'ROAMING', coords: box(groveHasTableService ? 70 : 4, 62, 165, 110), x: groveHasTableService ? 120 : 84, z: 89 });
+        if (groveHasTableService) shapes.push({ id: 'venue-1-table-service', side: 'Grove', label: 'TABLE SERVICE', coords: box(-165, 62, -70, 110), x: -120, z: 89 });
+        const pitPosition = pitSides[pitSide];
+        if (level.id === '1') shapes.push({ id: 'venue-1-pit', side: 'Pit', coords: box(pitPosition.minX, -80, pitPosition.maxX, -5), x: pitPosition.x, z: -65 });
+        if (level.id === '4') shapes.push({ id: 'clinic-zone', side: 'Main Medical', coords: box(170, -110, 270, -6), x: 220, z: -70 });
+        // Destination surfaces paint before markers, so no neighboring zone can cover a unit.
+        const zoneData = shapes.map(shape => {
+            const members = atPost(shape.id);
+            const medical = shape.id === 'clinic-zone';
+            const post = medical ? mainMedicalPost : venuePosts.find(post => post.id === shape.id);
+            const description = shape.id === 'venue-1-pit'
                 ? `${pitSide === 'stage-left' ? 'stage left' : 'stage right'} inside 1st floor auditorium, near ${pitPosition.street}`
                 : post.mapDescription;
+            const [cx, cy] = project(shape.x, shape.z, y);
             const selected = members.some(team => team.id === selectedVenueTeam);
-            const cls = `venue-destination${id === 'clinic-zone' ? ' venue-medical' : ''}${post.fixed ? ' venue-fixed-post' : ''}${selected ? ' venue-occupied-selected' : ''}`;
-            drawing += `<g class="${cls}" data-venue-post="${id}" data-venue-side="${id === 'clinic-zone' ? 'Main Medical' : post.side}"><polygon points="${points(rectangle(x - width / 2, top, width, height))}" class="venue-zone-surface" tabindex="0" role="button" aria-label="${escapeHTML(post.name)}${post.fixed ? `, fixed post, ${escapeHTML(description)}` : ''}, ${members.length} units"/></g>`;
-        }
-        for (const panel of panels) {
-            const { id, post, x, top, height, gridHeight, columns, rows } = panel;
-            drawing += `<g class="venue-team-layer" data-venue-post="${id}" data-grid-columns="${columns}" data-grid-rows="${rows.length}"><text x="${x}" y="${top + 13}" text-anchor="middle" class="venue-side-label${id === 'clinic-zone' ? ' venue-medical-label' : ''}">${panel.label}</text>`;
-            let rowTop = top + 20 + (height - 20 - gridHeight) / 2;
-            for (const row of rows) {
-                for (let index = 0; index < row.cells.length; index++) {
-                    const { team, lines } = row.cells[index];
-                    const markerX = x + (index - (row.cells.length - 1) / 2) * cellWidth;
-                    const markerY = rowTop + row.lines * lineHeight + 11;
-                    const nameTop = rowTop + (row.lines - lines.length) * lineHeight;
-                    const status = isOnMealBreak(team) ? 'meal' : isFixedPost(team) ? 'fixed' : team.status;
-                    const name = lines.map((line, i) => `<tspan x="${markerX}" y="${nameTop + 12 + i * lineHeight}" textLength="${Math.min(64, Array.from(line).length * 8)}" lengthAdjust="spacingAndGlyphs">${escapeHTML(line)}</tspan>`).join('');
-                    drawing += `<g class="venue-map-unit${team.id === selectedVenueTeam ? ' is-selected' : ''}" data-map-team="${team.id}" data-status="${team.status}"${isFixedPost(team) ? ' data-fixed-post="true"' : ''}${isOnMealBreak(team) ? ' data-meal-break="true"' : ''} role="button" tabindex="0" aria-label="Change status for ${escapeHTML(team.name)}, ${escapeHTML(post.name)}, ${statusNames[team.status]}${isOnMealBreak(team) ? ', on meal break' : ''}"><title>${escapeHTML(team.name)} · ${escapeHTML(post.name)} · ${statusNames[team.status]}${isFixedPost(team) ? ' · Fixed post' : ''}${isOnMealBreak(team) ? ' · On meal break' : ''}</title><circle class="venue-unit-hit" cx="${markerX}" cy="${markerY - 5}" r="23"/><ellipse class="venue-ball-shadow" cx="${markerX + 1}" cy="${markerY + 9}" rx="8" ry="2.5"/><circle class="venue-selection-ring" cx="${markerX}" cy="${markerY}" r="13"/><circle class="venue-unit-ball" cx="${markerX}" cy="${markerY}" r="8" fill="url(#venue-ball-${status})"/><text x="${markerX}" y="${nameTop + 12}" text-anchor="middle" class="venue-marker-name" xml:space="preserve">${name}</text></g>`;
-                }
-                rowTop += row.height;
+            const cls = `venue-destination${medical ? ' venue-medical' : ''}${post.fixed ? ' venue-fixed-post' : ''}${selected ? ' venue-occupied-selected' : ''}`;
+            drawing += `<g class="${cls}" data-venue-post="${shape.id}" data-venue-side="${shape.side}"><polygon points="${points(shape.coords, y, 0, basementStretch)}" class="venue-zone-surface" tabindex="0" role="button" aria-label="${escapeHTML(post.name)}${post.fixed ? `, fixed post, ${escapeHTML(description)}` : ''}, ${members.length} units"/></g>`;
+            return { shape, members, cx, cy, post };
+        });
+        for (const { shape, members, cx, cy, post } of zoneData) {
+            // Marker groups retain their destination for drag hit testing and keyboard moves.
+            drawing += `<g class="venue-team-layer" data-venue-post="${shape.id}">`;
+            const cols = columns(post, members.length);
+            const medicalOffset = level.id === '4' && shape.side === 'Polk' ? Math.max(0, atPost('clinic-zone').length - 1) * rowHeight : 0;
+            const labelY = shape.id === 'clinic-zone' || shape.side === 'Pit' ? cy - 37
+                : cy + (members.length ? (Math.ceil(members.length / cols) - 1) * rowHeight + 25 + medicalOffset : 4);
+            drawing += `<text x="${cx}" y="${labelY}" text-anchor="middle" class="venue-side-label${shape.id === 'clinic-zone' ? ' venue-medical-label' : ''}">${shape.id === 'clinic-zone' ? '+ MEDICAL' : shape.label || shape.side.toUpperCase()}</text>`;
+            for (let slot = 0; slot < members.length; slot++) {
+                const team = members[slot];
+                const row = Math.floor(slot / cols);
+                const rowSize = Math.min(cols, members.length - row * cols);
+                const column = slot % cols - (rowSize - 1) / 2;
+                const pitMarker = shape.side === 'Pit' ? project(shape.x + column * 80, shape.z, y) : null;
+                const x = pitMarker ? pitMarker[0] : cx + column * (post.fixed ? 72 : 104);
+                const markerY = (pitMarker ? pitMarker[1] : cy) + row * rowHeight + medicalOffset;
+                const label = team.name.length > 14 ? `${team.name.slice(0, 13)}…` : team.name;
+                const status = isOnMealBreak(team) ? 'meal' : isFixedPost(team) ? 'fixed' : team.status;
+                drawing += `<g class="venue-map-unit${team.id === selectedVenueTeam ? ' is-selected' : ''}" data-map-team="${team.id}" data-status="${team.status}"${isFixedPost(team) ? ' data-fixed-post="true"' : ''}${isOnMealBreak(team) ? ' data-meal-break="true"' : ''} role="button" tabindex="0" aria-label="Change status for ${escapeHTML(team.name)}, ${escapeHTML(post.name)}, ${statusNames[team.status]}${isOnMealBreak(team) ? ', on meal break' : ''}"><title>${escapeHTML(team.name)} · ${escapeHTML(post.name)} · ${statusNames[team.status]}${isFixedPost(team) ? ' · Fixed post' : ''}${isOnMealBreak(team) ? ' · On meal break' : ''}</title><circle class="venue-unit-hit" cx="${x}" cy="${markerY - 5}" r="23"/><ellipse class="venue-ball-shadow" cx="${x + 1}" cy="${markerY + 9}" rx="8" ry="2.5"/><circle class="venue-selection-ring" cx="${x}" cy="${markerY}" r="13"/><circle class="venue-unit-ball" cx="${x}" cy="${markerY}" r="8" fill="url(#venue-ball-${status})"/><text x="${x}" y="${markerY - 16}" text-anchor="middle" class="venue-marker-name">${escapeHTML(label)}</text></g>`;
             }
             drawing += '</g>';
         }
