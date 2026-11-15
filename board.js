@@ -10,6 +10,10 @@ const venueLevels = [
     { id: '4', name: '4th floor', short: '4', detail: 'Main Medical · Polk' }
 ];
 const venueSides = ['Grove', 'Polk', 'Larkin'];
+const pitSides = {
+    'stage-left': { label: 'Stage left · Polk', street: 'Polk', x: 95, minX: 35, maxX: 155 },
+    'stage-right': { label: 'Stage right · Larkin', street: 'Larkin', x: -95, minX: -155, maxX: -35 }
+};
 const venuePosts = [
     { id: 'venue-b-basement', name: 'Basement', level: 'b', side: 'Basement' },
     ...venueLevels.filter(level => level.id !== 'b').flatMap(level => venueSides.map(side => ({
@@ -17,12 +21,13 @@ const venuePosts = [
     }))),
     { id: 'venue-1-roaming', name: '1st roaming', level: '1', side: 'Grove', roaming: true },
     { id: 'venue-2-roaming', name: '2nd roaming', level: '2', side: 'Grove', roaming: true },
-    { id: 'venue-1-pit', name: 'Pit', level: '1', side: 'Pit', fixed: true, mapDescription: 'stage left inside 1st floor auditorium' },
+    { id: 'venue-1-pit', name: 'Pit', level: '1', side: 'Pit', fixed: true },
     { id: 'venue-1-table-service', name: 'Table Service', level: '1', side: 'Grove', fixed: true, mapDescription: '1st floor Grove nearest Larkin' }
 ];
 const defaultVenueBoardPosts = ['venue-1-grove', 'venue-1-polk', 'venue-1-larkin',
     'venue-2-grove', 'venue-2-polk', 'venue-2-larkin', 'venue-1-roaming', 'venue-2-roaming'];
 let selectedVenue = '';
+let pitSide = 'stage-left';
 let venueBoardPosts = [...defaultVenueBoardPosts];
 let showThirdFloor = false;
 const mainMedicalPost = { id: 'clinic-zone', name: 'Main Medical · 4th floor · Polk', level: '4', side: 'Polk' };
@@ -51,6 +56,7 @@ let lastDragEnd = 0;
 function canonicalLocation(id) {
     return ['venue-b-polk', 'venue-b-larkin', 'venue-b-grove'].includes(id) ? 'venue-b-basement' : id;
 }
+function validPitSide(side) { return typeof side === 'string' && Object.hasOwn(pitSides, side); }
 function readBoard(saved) {
     if (!saved || !Array.isArray(saved.teams) || !Array.isArray(saved.locations)) {
         throw new Error('Invalid board');
@@ -97,7 +103,8 @@ function readBoard(saved) {
     const venueBoardPosts = Array.isArray(saved.venueBoardPosts)
         ? [...new Set(saved.venueBoardPosts.map(canonicalLocation).filter(id => venuePosts.some(post => post.id === id && !post.fixed)))]
         : [...defaultVenueBoardPosts];
-    return { teams, locations, notes: typeof saved.notes === 'string' ? saved.notes : '', handoffLog, venue, venueBoardPosts };
+    const pitSide = validPitSide(saved.pitSide) ? saved.pitSide : 'stage-left';
+    return { teams, locations, notes: typeof saved.notes === 'string' ? saved.notes : '', handoffLog, venue, venueBoardPosts, pitSide };
 }
 
 try {
@@ -110,6 +117,7 @@ try {
         handoffLog = saved.handoffLog;
         selectedVenue = saved.venue;
         venueBoardPosts = saved.venueBoardPosts;
+        pitSide = saved.pitSide;
     }
 } catch {
     // Storage is checked again on the first save so the operator sees any error.
@@ -146,7 +154,7 @@ function venuePostForTeam(team) {
     return team.zone === 'clinic-zone' ? mainMedicalPost : venuePosts.find(post => post.id === team.location);
 }
 function boardState(notes = document.getElementById('shift-notes').value) {
-    return { teams, locations, notes, venue: selectedVenue, venueBoardPosts };
+    return { teams, locations, notes, venue: selectedVenue, venueBoardPosts, pitSide };
 }
 function serializeBoard() {
     return JSON.stringify({ ...boardState(), handoffLog });
@@ -164,6 +172,7 @@ function undoChange() {
     teams = previous.teams; locations = previous.locations;
     selectedVenue = previous.venue || '';
     venueBoardPosts = previous.venueBoardPosts || [...defaultVenueBoardPosts];
+    pitSide = validPitSide(previous.pitSide) ? previous.pitSide : 'stage-left';
     handoffLog = log;
     handoffLog.length = logLength;
     document.getElementById('shift-notes').value = previous.notes;
@@ -382,7 +391,8 @@ function renderBoard() {
                 subpost.className = 'fixed-subpost'; subpost.dataset.location = post.id; subpost.tabIndex = -1;
                 subpost.setAttribute('aria-label', `${post.name}, fixed post`);
                 const count = teams.filter(team => team.zone === 'field-zone' && team.location === post.id).length;
-                subpost.innerHTML = `<div class="location-header"><h4>${escapeHTML(post.name)}</h4><span class="location-count">${count} unit${count === 1 ? '' : 's'}</span></div>`;
+                subpost.innerHTML = `<div class="location-header"><h4>${escapeHTML(post.name)}</h4>${post.id === 'venue-1-pit' ? `<select id="board-pit-side" class="pit-side-select" aria-label="Pit side">${pitSideOptions()}</select>` : ''}<span class="location-count">${count} unit${count === 1 ? '' : 's'}</span></div>`;
+                subpost.querySelector('.pit-side-select')?.addEventListener('change', event => changePitSide(event.target.value, event.target.id));
                 const postGrid = document.createElement('div');
                 postGrid.className = 'badge-grid';
                 subpost.append(postGrid);
@@ -596,6 +606,16 @@ function drop(e, zoneId, location = 'unassigned') {
 }
 
 // Both views use team.location and moveTeam. The map never keeps a second unit list.
+function pitSideOptions() {
+    return Object.entries(pitSides).map(([value, side]) => `<option value="${value}"${value === pitSide ? ' selected' : ''}>${side.label}</option>`).join('');
+}
+function changePitSide(side, sourceId) {
+    if (!validPitSide(side) || side === pitSide) return;
+    rememberChange();
+    pitSide = side;
+    refresh();
+    if (sourceId) document.getElementById(sourceId)?.focus({ preventScroll: true });
+}
 function billGrahamPostOptions(current) {
     const option = post => `<option value="${post.id}"${current === post.id ? ' selected' : ''}>${escapeHTML(post.name)}</option>`;
     return `<optgroup label="Bill Graham posts">${defaultVenueBoardPosts.map(id => venuePosts.find(post => post.id === id)).map(option).join('')}</optgroup>`
@@ -609,6 +629,7 @@ function renderVenueControls() {
     const billGraham = selectedVenue === 'bill-graham';
     document.body.dataset.venue = selectedVenue;
     document.getElementById('venue-select').value = selectedVenue;
+    document.getElementById('map-pit-side').value = pitSide;
     document.getElementById('custom-post-field').hidden = billGraham;
     document.getElementById('venue-post-field').hidden = !billGraham;
     document.getElementById('newLocationInput').required = !billGraham;
@@ -814,18 +835,21 @@ function renderVenueMap() {
         ];
         if (groveHasRoaming) shapes.push({ id: `venue-${level.id}-roaming`, side: 'Grove', label: 'ROAMING', coords: box(groveHasTableService ? 70 : 4, 62, 165, 110), x: groveHasTableService ? 120 : 84, z: 89 });
         if (groveHasTableService) shapes.push({ id: 'venue-1-table-service', side: 'Grove', label: 'TABLE SERVICE', coords: box(-165, 62, -70, 110), x: -120, z: 89 });
-        // Stage left is the performer's left facing Grove, inside the Polk half of the auditorium.
-        if (level.id === '1') shapes.push({ id: 'venue-1-pit', side: 'Pit', coords: box(35, -80, 155, -5), x: 95, z: -43 });
+        const pitPosition = pitSides[pitSide];
+        if (level.id === '1') shapes.push({ id: 'venue-1-pit', side: 'Pit', coords: box(pitPosition.minX, -80, pitPosition.maxX, -5), x: pitPosition.x, z: -65 });
         if (level.id === '4') shapes.push({ id: 'clinic-zone', side: 'Main Medical', coords: box(170, -110, 270, -6), x: 220, z: -70 });
         // Destination surfaces paint before markers, so no neighboring zone can cover a unit.
         const zoneData = shapes.map(shape => {
             const members = atPost(shape.id);
             const medical = shape.id === 'clinic-zone';
             const post = medical ? mainMedicalPost : venuePosts.find(post => post.id === shape.id);
+            const description = shape.id === 'venue-1-pit'
+                ? `${pitSide === 'stage-left' ? 'stage left' : 'stage right'} inside 1st floor auditorium, near ${pitPosition.street}`
+                : post.mapDescription;
             const [cx, cy] = project(shape.x, shape.z, y);
             const selected = members.some(team => team.id === selectedVenueTeam);
             const cls = `venue-destination${medical ? ' venue-medical' : ''}${post.fixed ? ' venue-fixed-post' : ''}${selected ? ' venue-occupied-selected' : ''}`;
-            drawing += `<g class="${cls}" data-venue-post="${shape.id}" data-venue-side="${shape.side}"><polygon points="${points(shape.coords, y, 0, basementStretch)}" class="venue-zone-surface" tabindex="0" role="button" aria-label="${escapeHTML(post.name)}${post.fixed ? `, fixed post, ${escapeHTML(post.mapDescription)}` : ''}, ${members.length} units"/></g>`;
+            drawing += `<g class="${cls}" data-venue-post="${shape.id}" data-venue-side="${shape.side}"><polygon points="${points(shape.coords, y, 0, basementStretch)}" class="venue-zone-surface" tabindex="0" role="button" aria-label="${escapeHTML(post.name)}${post.fixed ? `, fixed post, ${escapeHTML(description)}` : ''}, ${members.length} units"/></g>`;
             return { shape, members, cx, cy, post };
         });
         for (const { shape, members, cx, cy, post } of zoneData) {
@@ -840,8 +864,10 @@ function renderVenueMap() {
                 const team = members[slot];
                 const row = Math.floor(slot / cols);
                 const rowSize = Math.min(cols, members.length - row * cols);
-                const x = cx + (slot % cols - (rowSize - 1) / 2) * (post.fixed ? 72 : 104);
-                const markerY = cy + row * rowHeight + medicalOffset;
+                const column = slot % cols - (rowSize - 1) / 2;
+                const pitMarker = shape.side === 'Pit' ? project(shape.x + column * 80, shape.z, y) : null;
+                const x = pitMarker ? pitMarker[0] : cx + column * (post.fixed ? 72 : 104);
+                const markerY = (pitMarker ? pitMarker[1] : cy) + row * rowHeight + medicalOffset;
                 const label = team.name.length > 14 ? `${team.name.slice(0, 13)}…` : team.name;
                 const status = isOnMealBreak(team) ? 'meal' : isFixedPost(team) ? 'fixed' : team.status;
                 drawing += `<g class="venue-map-unit${team.id === selectedVenueTeam ? ' is-selected' : ''}" data-map-team="${team.id}" data-status="${team.status}"${isFixedPost(team) ? ' data-fixed-post="true"' : ''}${isOnMealBreak(team) ? ' data-meal-break="true"' : ''} role="button" tabindex="0" aria-label="Change status for ${escapeHTML(team.name)}, ${escapeHTML(post.name)}, ${statusNames[team.status]}${isOnMealBreak(team) ? ', on meal break' : ''}"><title>${escapeHTML(team.name)} · ${escapeHTML(post.name)} · ${statusNames[team.status]}${isFixedPost(team) ? ' · Fixed post' : ''}${isOnMealBreak(team) ? ' · On meal break' : ''}</title><circle class="venue-unit-hit" cx="${x}" cy="${markerY - 5}" r="23"/><ellipse class="venue-ball-shadow" cx="${x + 1}" cy="${markerY + 9}" rx="8" ry="2.5"/><circle class="venue-selection-ring" cx="${x}" cy="${markerY}" r="13"/><circle class="venue-unit-ball" cx="${x}" cy="${markerY}" r="8" fill="url(#venue-ball-${status})"/><text x="${x}" y="${markerY - 16}" text-anchor="middle" class="venue-marker-name">${escapeHTML(label)}</text></g>`;
@@ -870,6 +896,7 @@ function finishVenueDrag() {
 }
 
 function initializeVenue() {
+    document.getElementById('map-pit-side').addEventListener('change', event => changePitSide(event.target.value, event.target.id));
     document.getElementById('venue-select').addEventListener('change', event => changeVenue(event.target.value));
     document.getElementById('venue-show-third').addEventListener('change', event => {
         showThirdFloor = event.target.checked;
@@ -1068,6 +1095,7 @@ function replaceBoard(board) {
     handoffLog = board.handoffLog;
     selectedVenue = board.venue || '';
     venueBoardPosts = board.venueBoardPosts || [...defaultVenueBoardPosts];
+    pitSide = validPitSide(board.pitSide) ? board.pitSide : 'stage-left';
     notes.value = savedNotes = board.notes;
     document.getElementById('form-error').hidden = true;
     refresh();
@@ -1108,13 +1136,13 @@ backupFile.addEventListener('change', async () => {
 
 document.getElementById('demo-board').addEventListener('click', () => {
     if ((teams.length || locations.length || notes.value || handoffLog.length) && !confirm('Replace this board with sample units?')) return;
-    replaceBoard(readBoard({ teams: sampleTeams, locations: [], notes: '', venue: selectedVenue, venueBoardPosts }));
+    replaceBoard(readBoard({ teams: sampleTeams, locations: [], notes: '', venue: selectedVenue, venueBoardPosts, pitSide }));
     showToolMessage('Sample units loaded.');
 });
 
 document.getElementById('clear-board').addEventListener('click', () => {
     if (!confirm('Clear all units, custom posts, shift notes, and time stamp entries?')) return;
-    replaceBoard({ teams: [], locations: [], notes: '', handoffLog: [], venue: selectedVenue, venueBoardPosts: [...defaultVenueBoardPosts] });
+    replaceBoard({ teams: [], locations: [], notes: '', handoffLog: [], venue: selectedVenue, venueBoardPosts: [...defaultVenueBoardPosts], pitSide });
     showToolMessage('Board cleared.');
 });
 

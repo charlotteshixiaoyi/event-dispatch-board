@@ -511,4 +511,84 @@ test('Larkin is left and Polk is right on every floor, including assigned units 
  run("showThirdFloor=false;venueAngle=18;renderVenue()");
  assert.deepEqual(state(),before);
 });
+// Pit position is a saved venue setting shared by the board and map controls.
+run(`replaceBoard(readBoard({teams:[{id:'tp1',name:'PIT-1',status:'onscene',location:'venue-1-pit'},{id:'tp2',name:'PIT-2',status:'roaming',location:'venue-1-pit',mealBreak:{startedAt:Date.now()-60000,returnedAt:null}},{id:'tt1',name:'TABLE-1',status:'roaming',location:'venue-1-table-service'}],locations:[],venue:'bill-graham',notes:'Pit positioning'}));venueFloor='all';venueAngle=18;setView('venue')`);
+const pitCenter=()=>{const points=document.querySelector('.venue-destination[data-venue-post="venue-1-pit"] polygon').getAttribute('points').split(' ').map(pair=>pair.split(',').map(Number));return points.reduce((sum,p)=>sum+p[0],0)/points.length;};
+const sideCenter=street=>{const points=document.querySelector(`.venue-destination[data-venue-post="venue-1-${street}"] polygon`).getAttribute('points').split(' ').map(pair=>pair.split(',').map(Number));return points.reduce((sum,p)=>sum+p[0],0)/points.length;};
+test('Pit defaults to stage left near Polk and both selectors agree',()=>{
+ assert.equal(state().pitSide,'stage-left');
+ assert.equal(el('map-pit-side').value,'stage-left');
+ assert.equal(el('board-pit-side').value,'stage-left');
+ assert.ok(Math.abs(pitCenter()-sideCenter('polk'))<Math.abs(pitCenter()-sideCenter('larkin')));
+ assert.ok(document.querySelector('.venue-destination[data-venue-post="venue-1-pit"] polygon').getAttribute('aria-label').includes('near Polk'));
+});
+test('map selector moves the Pit area and every Pit team to stage right near Larkin',()=>{
+ const before=state();
+ const originalX=Number(document.querySelector('[data-map-team="tp1"] .venue-unit-ball').getAttribute('cx'));
+ const tableX=Number(document.querySelector('[data-map-team="tt1"] .venue-unit-ball').getAttribute('cx'));
+ el('map-pit-side').value='stage-right';el('map-pit-side').fire('change');
+ assert.equal(state().pitSide,'stage-right');
+ assert.equal(el('board-pit-side').value,'stage-right');
+ assert.ok(Math.abs(pitCenter()-sideCenter('larkin'))<Math.abs(pitCenter()-sideCenter('polk')));
+ assert.ok(Number(document.querySelector('[data-map-team="tp1"] .venue-unit-ball').getAttribute('cx'))<originalX);
+ assert.ok(Number(document.querySelector('[data-map-team="tp2"] .venue-unit-ball').getAttribute('cx'))<500);
+ assert.equal(Number(document.querySelector('[data-map-team="tt1"] .venue-unit-ball').getAttribute('cx')),tableX);
+ assert.deepEqual(state().teams,before.teams);
+ assert.deepEqual(state().handoffLog,before.handoffLog);
+ assert.equal(state().notes,before.notes);
+ assert.equal(document.querySelector('[data-map-team="tp1"] .venue-unit-ball').getAttribute('fill'),'url(#venue-ball-fixed)');
+ assert.equal(document.querySelector('[data-map-team="tp2"] .venue-unit-ball').getAttribute('fill'),'url(#venue-ball-meal)');
+ assert.ok(document.querySelector('.venue-destination[data-venue-post="venue-1-pit"] polygon').getAttribute('aria-label').includes('stage right inside 1st floor auditorium, near Larkin'));
+ for(const side of ['stage-left','stage-right'])for(const angle of [-30,18,42]){
+  run(`changePitSide('${side}');venueAngle=${angle};renderVenue()`);
+  const polygon=document.querySelector('.venue-destination[data-venue-post="venue-1-pit"] polygon').getAttribute('points').split(' ').map(pair=>pair.split(',').map(Number));
+  for(const id of ['tp1','tp2']){
+   const ball=document.querySelector(`[data-map-team="${id}"] .venue-unit-ball`);
+   const point=[Number(ball.getAttribute('cx')),Number(ball.getAttribute('cy'))];
+   const signs=polygon.map((a,i)=>{const b=polygon[(i+1)%polygon.length];return(b[0]-a[0])*(point[1]-a[1])-(b[1]-a[1])*(point[0]-a[0]);});
+   assert.ok(signs.every(value=>value>=0)||signs.every(value=>value<=0));
+  }
+  const near=side==='stage-left'?'polk':'larkin',far=side==='stage-left'?'larkin':'polk';
+  assert.ok(Math.abs(pitCenter()-sideCenter(near))<Math.abs(pitCenter()-sideCenter(far)));
+ }
+ run('venueAngle=18;renderVenue()');
+
+});
+test('first-tab selector returns Pit to stage left and Undo restores stage right',()=>{
+ const before=state();run("setView('dispatch')");
+ el('board-pit-side').value='stage-left';el('board-pit-side').fire('change');
+ assert.equal(state().pitSide,'stage-left');
+ assert.equal(el('map-pit-side').value,'stage-left');
+ assert.equal(document.activeElement.id,'board-pit-side');
+ run("setView('venue')");
+ assert.ok(Math.abs(pitCenter()-sideCenter('polk'))<Math.abs(pitCenter()-sideCenter('larkin')));
+ run('undoChange()');assert.deepEqual(state(),before);
+ assert.equal(el('board-pit-side').value,'stage-right');
+ assert.equal(el('map-pit-side').value,'stage-right');
+});
+test('Pit side is saved, restored from backups, and loaded on app startup',()=>{
+ const saved=state();
+ assert.equal(JSON.parse(data.get('charlotte-dispatch-board-v1')).pitSide,'stage-right');
+ run('replaceBoard(readBoard(JSON.parse(serializeBoard())))');assert.deepEqual(state(),saved);
+ const startupDocument=makeDocument(html);
+ const startupData=new Map([['charlotte-dispatch-board-v1',JSON.stringify(saved)]]);
+ const startupContext=vm.createContext({document:startupDocument,localStorage:{getItem:key=>startupData.get(key)??null,setItem:(key,value)=>startupData.set(key,value)},navigator:{},location:{protocol:'file:'},Intl,Date,Set,Map,JSON,Math,Object,Number,String,Array,Blob,URL,setInterval(){},setTimeout(){},confirm:()=>true});
+ vm.runInContext(source,startupContext);
+ assert.equal(startupDocument.getElementById('board-pit-side').value,'stage-right');
+ assert.equal(startupDocument.getElementById('map-pit-side').value,'stage-right');
+ assert.deepEqual(JSON.parse(startupData.get('charlotte-dispatch-board-v1')),saved);
+});
+test('Pit configuration survives camera reset and routine board actions; old backups default left',()=>{
+ el('venue-reset').click();assert.equal(state().pitSide,'stage-right');
+ const before=state();
+ run("changePitSide('bad');changePitSide('stage-right')");assert.deepEqual(state(),before);
+ for(const value of [undefined,'invalid',null,['stage-right']]){
+  const backup={teams:[],locations:[],pitSide:value};
+  assert.equal(run(`readBoard(${JSON.stringify(backup)}).pitSide`),'stage-left');
+ }
+ el('demo-board').click();assert.equal(state().pitSide,'stage-right');
+ el('clear-board').click();assert.equal(state().pitSide,'stage-right');
+ assert.equal(el('board-pit-side').value,'stage-right');
+ run('undoChange()');assert.equal(state().pitSide,'stage-right');
+});
 console.log(`${passed} checks passed.`);

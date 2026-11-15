@@ -1,9 +1,9 @@
 const root = self.registration.scope;
 const cachePrefix = `ems-dispatch-app:${root}:`;
-const cacheName = `${cachePrefix}v11`;
+const cacheName = `${cachePrefix}v12`;
 const home = new URL('index.html', root).href;
 const assets = [
-    'board.css?v=11', 'board.js?v=11', 'dispatch.svg', 'manifest.webmanifest', 'dispatch-192.png', 'dispatch-512.png'
+    'board.css?v=12', 'board.js?v=12', 'dispatch.svg', 'manifest.webmanifest', 'dispatch-192.png', 'dispatch-512.png'
 ].map(path => new URL(path, root).href);
 
 self.addEventListener('install', event => {
