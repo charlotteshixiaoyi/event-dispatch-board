@@ -1,6 +1,7 @@
 """Build the self-contained HTML page from the shared app sources."""
 
 import base64
+import re
 from pathlib import Path
 
 
@@ -12,11 +13,16 @@ icon = 'data:image/svg+xml;base64,' + base64.b64encode(
 html = html.replace('./dispatch.svg', icon)
 html = html.replace('    <link rel="apple-touch-icon" href="./dispatch-192.png">\n', '')
 html = html.replace('    <link rel="manifest" href="./manifest.webmanifest">\n', '')
-html = html.replace(
-    '    <link rel="stylesheet" href="./board.css?v=6">',
-    '    <style>\n' + (root / 'board.css').read_text() + '    </style>'
+html, styles = re.subn(
+    r'    <link rel="stylesheet" href="\./board\.css(?:\?[^"]*)?">',
+    lambda _: '    <style>\n' + (root / 'board.css').read_text() + '    </style>',
+    html,
 )
-html = html.replace('    <script src="./board.js?v=6" defer></script>\n', '')
+html, scripts = re.subn(
+    r'    <script src="\./board\.js(?:\?[^"]*)?" defer></script>\n', '', html
+)
+if styles != 1 or scripts != 1:
+    raise ValueError('Expected exactly one shared stylesheet and script in index.html')
 html = html.replace(
     '</body>',
     '    <script>\n' + (root / 'board.js').read_text() + '    </script>\n</body>'

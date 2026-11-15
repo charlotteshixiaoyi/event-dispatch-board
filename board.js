@@ -2,12 +2,42 @@ const storageKey = 'charlotte-dispatch-board-v1';
 const mealBreakDuration = 30 * 60 * 1000;
 const statusNames = { roaming: 'Roaming', onscene: 'On scene', transporting: 'Transporting', atclinic: 'At Medical' };
 const builtInLocations = [{ id: 'pit-table-service', name: 'Fixed posts' }, { id: 'unassigned', name: 'No post assigned' }];
+const venueLevels = [
+    { id: 'b', name: 'Basement', short: 'B', detail: 'Service level' },
+    { id: '1', name: '1st floor', short: '1', detail: 'Auditorium floor' },
+    { id: '2', name: '2nd floor', short: '2', detail: 'Lower concourse' },
+    { id: '3', name: '3rd floor', short: '3', detail: 'Upper concourse' },
+    { id: '4', name: '4th floor', short: '4', detail: 'Main Medical · Polk' }
+];
+const venueSides = ['Grove', 'Polk', 'Larkin'];
+const venuePosts = [
+    { id: 'venue-b-basement', name: 'Basement', level: 'b', side: 'Basement' },
+    ...venueLevels.filter(level => level.id !== 'b').flatMap(level => venueSides.map(side => ({
+        id: `venue-${level.id}-${side.toLowerCase()}`, name: `${level.name} ${side}`, level: level.id, side
+    }))),
+    { id: 'venue-1-roaming', name: '1st roaming', level: '1', side: 'Grove', roaming: true },
+    { id: 'venue-2-roaming', name: '2nd roaming', level: '2', side: 'Grove', roaming: true },
+    { id: 'venue-1-pit', name: 'Pit', level: '1', side: 'Pit', fixed: true }
+];
+const defaultVenueBoardPosts = ['venue-1-grove', 'venue-1-polk', 'venue-1-larkin',
+    'venue-2-grove', 'venue-2-polk', 'venue-2-larkin', 'venue-1-roaming', 'venue-2-roaming'];
+let selectedVenue = '';
+let venueBoardPosts = [...defaultVenueBoardPosts];
+let showThirdFloor = false;
+const mainMedicalPost = { id: 'clinic-zone', name: 'Main Medical · 4th floor · Polk', level: '4', side: 'Polk' };
+let activeView = 'dispatch';
+let selectedVenueTeam = null;
+let venueFloor = 'all';
+let venueAngle = 18;
+let venueDrag = null;
+let suppressVenueClickUntil = 0;
 let locations = [];
 const sampleTeams = [
-    { id: 't1', name: 'DEMO-1', status: 'roaming', zone: 'field-zone', location: 'unassigned' },
-    { id: 't2', name: 'DEMO-2', status: 'onscene', zone: 'field-zone', location: 'unassigned' },
-    { id: 't3', name: 'DEMO-3', status: 'transporting', zone: 'field-zone', location: 'unassigned' },
-    { id: 't4', name: 'DEMO-4', status: 'atclinic', zone: 'clinic-zone', location: 'unassigned' }
+    { id: 't1', name: 'DEMO-1', status: 'roaming', zone: 'field-zone', location: 'venue-1-polk' },
+    { id: 't2', name: 'DEMO-2', status: 'onscene', zone: 'field-zone', location: 'venue-2-larkin' },
+    { id: 't3', name: 'DEMO-3', status: 'transporting', zone: 'field-zone', location: 'venue-2-roaming' },
+    { id: 't4', name: 'DEMO-4', status: 'atclinic', zone: 'clinic-zone', location: 'unassigned' },
+    { id: 't5', name: 'DEMO-5', status: 'roaming', zone: 'field-zone', location: 'venue-1-pit' }
 ];
 let teams = [];
 let savedNotes = '';
@@ -16,11 +46,14 @@ let handoffLog = [];
 const undoHistory = [];
 let notesCheckpoint = null;
 let lastDragEnd = 0;
+function canonicalLocation(id) {
+    return ['venue-b-polk', 'venue-b-larkin', 'venue-b-grove'].includes(id) ? 'venue-b-basement' : id;
+}
 function readBoard(saved) {
     if (!saved || !Array.isArray(saved.teams) || !Array.isArray(saved.locations)) {
         throw new Error('Invalid board');
     }
-    const locationIds = new Set(builtInLocations.map(location => location.id));
+    const locationIds = new Set([...builtInLocations, ...venuePosts].map(location => location.id));
     const teamIds = new Set();
     const locations = saved.locations.map(location => {
         if (!location || typeof location.id !== 'string' || !/^loc_[a-z0-9_]+$/i.test(location.id)
@@ -40,10 +73,11 @@ function readBoard(saved) {
         teamIds.add(team.id);
         const { startedAt, returnedAt } = team.mealBreak ?? {};
         const validBreakStart = Number.isSafeInteger(startedAt) && startedAt > 0 && startedAt <= now;
+        const location = canonicalLocation(team.location);
         return {
             id: team.id, name: team.name, status: team.status,
             zone: team.status === 'atclinic' ? 'clinic-zone' : 'field-zone',
-            location: locationIds.has(team.location) ? team.location : 'unassigned',
+            location: locationIds.has(location) ? location : 'unassigned',
             statusSince: Number.isFinite(team.statusSince) && team.statusSince > 0 && team.statusSince <= now
                 ? team.statusSince : now,
             mealBreak: validBreakStart ? {
@@ -57,7 +91,11 @@ function readBoard(saved) {
         entry && Number.isSafeInteger(entry.at) && entry.at > 0 && entry.at <= 8.64e15
         && typeof entry.team === 'string' && typeof entry.message === 'string'
     ).map(({ at, team, message }) => ({ at, team, message })) : [];
-    return { teams, locations, notes: typeof saved.notes === 'string' ? saved.notes : '', handoffLog };
+    const venue = saved.venue === 'bill-graham' ? 'bill-graham' : '';
+    const venueBoardPosts = Array.isArray(saved.venueBoardPosts)
+        ? [...new Set(saved.venueBoardPosts.map(canonicalLocation).filter(id => venuePosts.some(post => post.id === id && !post.fixed)))]
+        : [...defaultVenueBoardPosts];
+    return { teams, locations, notes: typeof saved.notes === 'string' ? saved.notes : '', handoffLog, venue, venueBoardPosts };
 }
 
 try {
@@ -68,6 +106,8 @@ try {
         locations = saved.locations;
         savedNotes = saved.notes;
         handoffLog = saved.handoffLog;
+        selectedVenue = saved.venue;
+        venueBoardPosts = saved.venueBoardPosts;
     }
 } catch {
     // Storage is checked again on the first save so the operator sees any error.
@@ -89,9 +129,22 @@ function newId(prefix) { return prefix + Date.now().toString(36) + '_' + Math.ra
 function escapeHTML(value) {
     return String(value).replace(/[&<>"']/g, char => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[char]));
 }
-function fieldLocations() { return [...locations, ...builtInLocations]; }
+function fieldLocations() { return [...locations, ...builtInLocations, ...venuePosts]; }
+function visibleFieldLocations() {
+    return fieldLocations().filter(location => !location.fixed && (!venuePosts.some(post => post.id === location.id)
+        || (selectedVenue === 'bill-graham' && venueBoardPosts.includes(location.id))
+        || teams.some(team => team.zone === 'field-zone' && team.location === location.id)));
+}
+function isFixedPost(team) {
+    return team.zone === 'field-zone' && (team.location === 'pit-table-service'
+        || venuePosts.some(post => post.id === team.location && post.fixed));
+}
+function boardLocationForTeam(team) { return isFixedPost(team) ? 'pit-table-service' : team.location; }
+function venuePostForTeam(team) {
+    return team.zone === 'clinic-zone' ? mainMedicalPost : venuePosts.find(post => post.id === team.location);
+}
 function boardState(notes = document.getElementById('shift-notes').value) {
-    return { teams, locations, notes };
+    return { teams, locations, notes, venue: selectedVenue, venueBoardPosts };
 }
 function serializeBoard() {
     return JSON.stringify({ ...boardState(), handoffLog });
@@ -107,6 +160,8 @@ function undoChange() {
     const { snapshot, log, logLength } = undoHistory.pop();
     const previous = JSON.parse(snapshot);
     teams = previous.teams; locations = previous.locations;
+    selectedVenue = previous.venue || '';
+    venueBoardPosts = previous.venueBoardPosts || [...defaultVenueBoardPosts];
     handoffLog = log;
     handoffLog.length = logLength;
     document.getElementById('shift-notes').value = previous.notes;
@@ -224,18 +279,7 @@ function renderMealBreaks(sortedTeams) {
             action.textContent = onBreak ? 'Clear break' : 'Start meal';
             action.setAttribute('aria-label', `${action.textContent} for ${team.name}`);
             action.addEventListener('click', () => {
-                rememberChange();
-                const now = Date.now();
-                if (onBreak) {
-                    const returnedAt = Math.max(now, team.mealBreak.startedAt);
-                    team.mealBreak.returnedAt = returnedAt;
-                    const early = returnedAt - team.mealBreak.startedAt < mealBreakDuration;
-                    recordTimestamp(team, early ? 'Returned early from meal break' : 'Returned from meal break', returnedAt);
-                } else {
-                    team.mealBreak = { startedAt: now, returnedAt: null };
-                    recordTimestamp(team, 'Started meal break', now);
-                }
-                refresh();
+                toggleMealBreak(team.id);
                 const updatedRow = document.getElementById(row.id);
                 (updatedRow.querySelector('button') || updatedRow).focus({ preventScroll: true });
             });
@@ -246,6 +290,23 @@ function renderMealBreaks(sortedTeams) {
     updateMealBreakTimers(Date.now());
 }
 
+function toggleMealBreak(id) {
+    const team = teams.find(item => item.id === id);
+    if (!team || (team.mealBreak && !isOnMealBreak(team))) return;
+    rememberChange();
+    const now = Date.now();
+    if (isOnMealBreak(team)) {
+        const returnedAt = Math.max(now, team.mealBreak.startedAt);
+        team.mealBreak.returnedAt = returnedAt;
+        const early = returnedAt - team.mealBreak.startedAt < mealBreakDuration;
+        recordTimestamp(team, early ? 'Returned early from meal break' : 'Returned from meal break', returnedAt);
+    } else {
+        team.mealBreak = { startedAt: now, returnedAt: null };
+        recordTimestamp(team, 'Started meal break', now);
+    }
+    refresh();
+}
+
 function setBadgeLabel(badge, team) {
     const location = teamLocationName(team);
     const mealBreakLabel = isOnMealBreak(team) ? ' · On meal break' : '';
@@ -254,6 +315,7 @@ function setBadgeLabel(badge, team) {
 }
 
 function renderBoard() {
+    renderVenueControls();
     const field = document.getElementById('field-locations');
     const clinic = document.getElementById('clinic-grid');
     const details = document.getElementById('team-details');
@@ -262,7 +324,7 @@ function renderBoard() {
     field.replaceChildren();
     clinic.replaceChildren();
     const grids = new Map();
-    fieldLocations().forEach(location => {
+    visibleFieldLocations().forEach(location => {
         const section = document.createElement('section');
         section.className = 'field-location';
         section.dataset.location = location.id;
@@ -272,7 +334,16 @@ function renderBoard() {
         section.addEventListener('drop', e => drop(e, 'field-zone', location.id));
         const header = document.createElement('div');
         header.className = 'location-header';
-        if (builtInLocations.some(l => l.id === location.id)) {
+        const isVenuePost = venuePosts.some(post => post.id === location.id);
+        if (isVenuePost && selectedVenue === 'bill-graham') {
+            const select = document.createElement('select');
+            select.className = 'post-name-select';
+            select.setAttribute('aria-label', `Post name for ${location.name}`);
+            select.innerHTML = billGrahamPostOptions(location.id);
+            select.addEventListener('change', event => changeVenuePost(location.id, event.target.value));
+            header.appendChild(select);
+            section.classList.add('venue-board-post');
+        } else if (builtInLocations.some(l => l.id === location.id) || isVenuePost) {
             const title = document.createElement('h3');
             title.textContent = location.name;
             header.appendChild(title);
@@ -287,10 +358,10 @@ function renderBoard() {
         }
         const count = document.createElement('span');
         count.className = 'location-count';
-        const total = teams.filter(t => t.zone === 'field-zone' && t.location === location.id).length;
+        const total = teams.filter(t => t.zone === 'field-zone' && boardLocationForTeam(t) === location.id).length;
         count.textContent = `${total} unit${total !== 1 ? 's' : ''}`;
         header.appendChild(count);
-        if (!builtInLocations.some(l => l.id === location.id)) {
+        if (!builtInLocations.some(l => l.id === location.id) && (!isVenuePost || selectedVenue === 'bill-graham')) {
             const remove = document.createElement('button');
             remove.className = 'remove-location'; remove.textContent = '×';
             remove.title = 'Remove post';
@@ -302,6 +373,24 @@ function renderBoard() {
         grid.className = 'badge-grid';
         if (location.id === 'unassigned') grid.id = 'field-grid';
         section.append(header, grid); field.appendChild(section); grids.set(location.id, grid);
+        if (location.id === 'pit-table-service') {
+            for (const post of venuePosts.filter(post => post.fixed && (selectedVenue === 'bill-graham'
+                || teams.some(team => team.zone === 'field-zone' && team.location === post.id)))) {
+                const subpost = document.createElement('section');
+                subpost.className = 'fixed-subpost'; subpost.dataset.location = post.id; subpost.tabIndex = -1;
+                subpost.setAttribute('aria-label', `${post.name}, fixed post`);
+                const count = teams.filter(team => team.zone === 'field-zone' && team.location === post.id).length;
+                subpost.innerHTML = `<div class="location-header"><h4>${escapeHTML(post.name)}</h4><span class="location-count">${count} unit${count === 1 ? '' : 's'}</span></div>`;
+                const postGrid = document.createElement('div');
+                postGrid.className = 'badge-grid';
+                subpost.append(postGrid);
+                subpost.addEventListener('dragover', allowDrop);
+                subpost.addEventListener('dragleave', dragLeave);
+                subpost.addEventListener('drop', event => drop(event, 'field-zone', post.id));
+                section.append(subpost); grids.set(post.id, postGrid);
+                grid.classList.add('fixed-general-grid');
+            }
+        }
     });
 
     const sortedTeams = [...teams].sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true, sensitivity: 'base' }));
@@ -311,6 +400,7 @@ function renderBoard() {
         const badge = document.createElement('button');
         badge.type = 'button';
         badge.className = 'team-badge'; badge.dataset.status = team.status;
+        if (isFixedPost(team)) badge.dataset.fixedPost = 'true';
         if (onBreak) badge.dataset.mealBreak = 'true';
         badge.draggable = true; badge.id = team.id;
         setBadgeLabel(badge, team);
@@ -330,6 +420,7 @@ function renderBoard() {
 
         const row = document.createElement('tr');
         row.dataset.teamId = team.id;
+        if (isFixedPost(team)) row.dataset.fixedPost = 'true';
         if (onBreak) row.dataset.mealBreak = 'true';
         row.innerHTML = `
             <th scope="row">${escapeHTML(team.name)}${mealBreakFlag}</th>
@@ -337,8 +428,7 @@ function renderBoard() {
                 ${Object.entries(statusNames).map(([value, label]) => `<option value="${value}" ${team.status === value ? 'selected' : ''}>${label}</option>`).join('')}
             </select></td>
             <td><select id="location-${team.id}" class="location-select" aria-label="Post for ${escapeHTML(team.name)}">
-                ${fieldLocations().map(l => `<option value="${l.id}" ${team.zone === 'field-zone' && team.location === l.id ? 'selected' : ''}>${escapeHTML(l.name)}</option>`).join('')}
-                <option value="clinic-zone" ${team.zone === 'clinic-zone' ? 'selected' : ''}>Main Medical</option>
+                ${postOptions(team)}
             </select></td>
             <td><button type="button" title="Remove unit" aria-label="Remove ${escapeHTML(team.name)}" class="delete-btn">×</button></td>`;
         row.querySelector('.delete-btn').addEventListener('click', () => deleteTeam(team.id));
@@ -357,7 +447,7 @@ function renderBoard() {
     const fieldCount = teams.filter(t => t.zone === 'field-zone').length;
     const clinicCount = teams.length - fieldCount;
     const roamingCount = teams.filter(t => t.status === 'roaming' && t.zone === 'field-zone'
-        && t.location !== 'pit-table-service' && !isOnMealBreak(t)).length;
+        && !isFixedPost(t) && !isOnMealBreak(t)).length;
     document.querySelectorAll('.level-meter').forEach(meter => {
         meter.dataset.empty = String(roamingCount === 0);
         const value = meter.querySelector('[data-level-value]');
@@ -370,7 +460,7 @@ function renderBoard() {
     document.getElementById('clinic-count').textContent = `${clinicCount} unit${clinicCount !== 1 ? 's' : ''}`;
     document.getElementById('undo-button').disabled = undoHistory.length === 0;
 }
-function refresh() { renderBoard(); saveBoard(); }
+function refresh() { renderBoard(); renderVenue(); saveBoard(); }
 function addTeam() {
     const input = document.getElementById('newTeamInput');
     const name = input.value.trim();
@@ -384,7 +474,7 @@ function addTeam() {
     }
     error.hidden = true;
     rememberChange();
-    teams.push({ id: newId('t_'), name, status: 'roaming', zone: 'field-zone', location: 'unassigned', statusSince: Date.now() });
+    teams.push({ id: newId('t_'), name, status: 'roaming', zone: 'field-zone', location: 'unassigned', statusSince: Date.now(), mealBreak: null });
     input.value = ''; refresh(); input.focus();
 }
 function deleteTeam(id) {
@@ -392,6 +482,19 @@ function deleteTeam(id) {
     rememberChange(); teams = teams.filter(t => t.id !== id); refresh();
 }
 function addLocation() {
+    if (selectedVenue === 'bill-graham') {
+        const id = document.getElementById('newVenuePostSelect').value;
+        const post = venuePosts.find(post => post.id === id);
+        if (!post) return;
+        if (post.fixed) { document.querySelector(`[data-location="${id}"]`)?.focus({ preventScroll: true }); return; }
+        if (!venueBoardPosts.includes(id)) {
+            rememberChange();
+            venueBoardPosts.push(id);
+            refresh();
+        }
+        document.querySelector(`[data-location="${id}"] .post-name-select`)?.focus({ preventScroll: true });
+        return;
+    }
     const input = document.getElementById('newLocationInput');
     const name = input.value.trim(); if (!name) return;
     rememberChange();
@@ -415,10 +518,12 @@ function renameLocation(id, name) {
     teams.filter(team => team.zone === 'field-zone' && team.location === id).forEach(team => {
         setBadgeLabel(document.getElementById(team.id), team);
     });
+    renderVenue();
     saveBoard();
 }
 function removeLocation(id) {
-    if (!locations.some(l => l.id === id)) return;
+    const isVenuePost = venuePosts.some(post => post.id === id);
+    if (!locations.some(l => l.id === id) && !(selectedVenue === 'bill-graham' && isVenuePost)) return;
     rememberChange();
     const now = Date.now();
     teams.filter(team => team.location === id).forEach(team => {
@@ -426,8 +531,22 @@ function removeLocation(id) {
         team.location = 'unassigned';
         recordTeamChange(team, previous, now);
     });
-    locations = locations.filter(l => l.id !== id);
+    if (isVenuePost) venueBoardPosts = venueBoardPosts.filter(postId => postId !== id);
+    else locations = locations.filter(l => l.id !== id);
     refresh();
+}
+function changeVenuePost(from, destination) {
+    if (selectedVenue !== 'bill-graham' || from === destination
+        || !venuePosts.some(post => post.id === from) || !venuePosts.some(post => post.id === destination)) return;
+    rememberChange();
+    venueBoardPosts = [...new Set([...venueBoardPosts.map(id => id === from ? destination : id), destination])]
+        .filter(id => !venuePosts.find(post => post.id === id)?.fixed);
+    const now = Date.now();
+    teams.filter(team => team.zone === 'field-zone' && team.location === from)
+        .forEach(team => applyTeamMove(team, destination, now));
+    refresh();
+    (document.querySelector(`[data-location="${destination}"] .post-name-select`)
+        || document.querySelector(`[data-location="${destination}"]`))?.focus({ preventScroll: true });
 }
 function updateStatus(id, status) {
     const team = teams.find(t => t.id === id);
@@ -441,11 +560,16 @@ function updateStatus(id, status) {
     refresh();
 }
 function moveTeam(id, location) {
+    location = canonicalLocation(location);
     const team = teams.find(t => t.id === id);
     if (!team) return;
     if (location !== 'clinic-zone' && !validLocation(location)) return;
     if (location === 'clinic-zone' ? team.zone === 'clinic-zone' : team.zone === 'field-zone' && team.location === location) return;
     rememberChange();
+    applyTeamMove(team, location);
+    refresh();
+}
+function applyTeamMove(team, location, now = Date.now()) {
     const previous = { ...team };
     if (location === 'clinic-zone') {
         team.zone = 'clinic-zone'; team.status = 'atclinic';
@@ -453,10 +577,8 @@ function moveTeam(id, location) {
         team.zone = 'field-zone'; team.location = location;
         if (team.status === 'atclinic') team.status = 'roaming';
     }
-    const now = Date.now();
     if (team.status !== previous.status) team.statusSince = now;
     recordTeamChange(team, previous, now);
-    refresh();
 }
 function dragStart(e) {
     e.dataTransfer.setData('text/plain', e.currentTarget.id);
@@ -469,6 +591,417 @@ function drop(e, zoneId, location = 'unassigned') {
     e.preventDefault(); e.stopPropagation();
     document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
     moveTeam(e.dataTransfer.getData('text/plain'), zoneId === 'clinic-zone' ? 'clinic-zone' : location);
+}
+
+// Both views use team.location and moveTeam. The map never keeps a second unit list.
+function billGrahamPostOptions(current) {
+    const option = post => `<option value="${post.id}"${current === post.id ? ' selected' : ''}>${escapeHTML(post.name)}</option>`;
+    return `<optgroup label="Bill Graham posts">${defaultVenueBoardPosts.map(id => venuePosts.find(post => post.id === id)).map(option).join('')}</optgroup>`
+        + `<optgroup label="Fixed posts">${venuePosts.filter(post => post.fixed).map(option).join('')}</optgroup>`
+        + venueLevels.map(level => {
+            const additional = venuePosts.filter(post => post.level === level.id && !post.fixed && !defaultVenueBoardPosts.includes(post.id));
+            return additional.length ? `<optgroup label="${level.name}">${additional.map(option).join('')}</optgroup>` : '';
+        }).join('');
+}
+function renderVenueControls() {
+    const billGraham = selectedVenue === 'bill-graham';
+    document.body.dataset.venue = selectedVenue;
+    document.getElementById('venue-select').value = selectedVenue;
+    document.getElementById('custom-post-field').hidden = billGraham;
+    document.getElementById('venue-post-field').hidden = !billGraham;
+    document.getElementById('newLocationInput').required = !billGraham;
+    const select = document.getElementById('newVenuePostSelect');
+    const value = select.value;
+    select.innerHTML = billGraham ? billGrahamPostOptions(value) : '';
+}
+function changeVenue(value) {
+    const next = value === 'bill-graham' ? value : '';
+    if (next === selectedVenue) return;
+    rememberChange();
+    selectedVenue = next;
+    selectedVenueTeam = null;
+    showThirdFloor = false;
+    venueFloor = 'all';
+    finishVenueDrag();
+    refresh();
+}
+function postOptions(team) {
+    const current = team.zone === 'clinic-zone' ? 'clinic-zone' : team.location;
+    const option = post => `<option value="${post.id}"${current === post.id ? ' selected' : ''}>${escapeHTML(post.name)}</option>`;
+    const standard = `<optgroup label="Board posts">${[...locations, ...builtInLocations].map(option).join('')}${option({ id: 'clinic-zone', name: 'Main Medical' })}</optgroup>`;
+    if (selectedVenue === 'bill-graham') return standard + billGrahamPostOptions(current);
+    const assigned = venuePosts.find(post => post.id === current);
+    return standard + (assigned ? `<optgroup label="Current post">${option(assigned)}</optgroup>` : '');
+}
+
+function setView(view, focus = false) {
+    activeView = view;
+    document.body.classList[view === 'venue' ? 'add' : 'remove']('is-venue-view');
+    for (const name of ['dispatch', 'venue']) {
+        const tab = document.getElementById(`${name}-tab`);
+        const active = name === view;
+        tab.setAttribute('aria-selected', String(active));
+        tab.tabIndex = active ? 0 : -1;
+        document.getElementById(`${name}-panel`).hidden = !active;
+        if (active && focus) tab.focus();
+    }
+    if (view === 'venue') renderVenue();
+}
+
+function venueMessage(message) { document.getElementById('venue-feedback').textContent = message; }
+
+function selectVenueTeam(id, focus = false) {
+    if (selectedVenue !== 'bill-graham') return;
+    const team = teams.find(item => item.id === id);
+    if (!team) return;
+    selectedVenueTeam = id;
+    renderVenue();
+    venueMessage(`${team.name} selected. Choose a destination on the map or use Move to.`);
+    if (focus) document.querySelector(`#venue-unit-list [data-move-team="${id}"]`)?.focus({ preventScroll: true });
+}
+
+function cycleVenueTeamStatus(id, focus = false) {
+    if (selectedVenue !== 'bill-graham') return;
+    const team = teams.find(item => item.id === id);
+    if (!team) return;
+    selectedVenueTeam = id;
+    updateStatus(id, nextStatus(team.status));
+    venueMessage(`${team.name}: ${statusNames[team.status]}.`);
+    if (focus) (document.querySelector(`[data-map-team="${id}"]`)
+        || document.getElementById('venue-selected-status')).focus({ preventScroll: true });
+}
+
+function moveVenueTeam(id, destination) {
+    if (selectedVenue !== 'bill-graham') return;
+    destination = canonicalLocation(destination);
+    const team = teams.find(item => item.id === id);
+    if (!team || ![...venuePosts, mainMedicalPost].some(post => post.id === destination)) return;
+    selectedVenueTeam = id;
+    const samePost = venuePostForTeam(team)?.id === destination;
+    moveTeam(id, destination);
+    if (samePost) renderVenue();
+    const post = [...venuePosts, mainMedicalPost].find(item => item.id === destination);
+    venueMessage(samePost ? `${team.name} is already at ${post.name}.` : `${team.name} moved to ${post.name}. Both views updated.`);
+}
+
+function renderVenue() {
+    if (activeView !== 'venue') return;
+    const billGraham = selectedVenue === 'bill-graham';
+    document.getElementById('venue-content').hidden = !billGraham;
+    document.getElementById('venue-no-view').hidden = billGraham;
+    if (!billGraham) { document.getElementById('venue-canvas').replaceChildren(); return; }
+    if (!teams.some(team => team.id === selectedVenueTeam)) selectedVenueTeam = null;
+    const placed = teams.filter(team => venuePostForTeam(team)).length;
+    document.getElementById('venue-unit-count').textContent = `${placed}/${teams.length} placed`;
+    const visibleLevels = venueLevels.filter(level => level.id !== '3' || showThirdFloor);
+    document.getElementById('venue-show-third').checked = showThirdFloor;
+    const thirdCount = teams.filter(team => venuePostForTeam(team)?.level === '3').length;
+    document.getElementById('venue-third-label').textContent = `3rd floor${thirdCount ? ` (${thirdCount})` : ''}`;
+    document.getElementById('venue-levels').innerHTML = [{ id: 'all', short: 'All', name: 'All levels' }, ...visibleLevels].map(level => {
+        const count = teams.filter(team => venuePostForTeam(team)?.level === level.id).length;
+        return `<button type="button" data-venue-level="${level.id}" aria-label="${level.name}${level.id === 'all' ? '' : `, ${count} units`}" aria-pressed="${venueFloor === level.id}">${level.short}</button>`;
+    }).join('');
+    document.getElementById('venue-team-picker').innerHTML = '<option value="">Unit</option>' + [...teams].sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true })).map(team => `<option value="${team.id}"${team.id === selectedVenueTeam ? ' selected' : ''}>${escapeHTML(team.name)}</option>`).join('');
+    renderVenueUnits();
+    renderVenueInspector();
+    renderVenueMap();
+}
+
+function renderVenueUnits() {
+    const search = document.getElementById('venue-search').value.trim().toLowerCase();
+    const filter = document.getElementById('venue-unit-filter').value;
+    const filtered = [...teams].sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true, sensitivity: 'base' }))
+        .filter(team => team.name.toLowerCase().includes(search)
+            && (filter !== 'unplaced' || !venuePostForTeam(team)) && (filter !== 'meal' || isOnMealBreak(team)));
+    const empty = document.getElementById('venue-units-empty');
+    empty.hidden = filtered.length > 0;
+    empty.textContent = teams.length ? 'No matching units' : 'No units';
+    document.getElementById('venue-unit-list').innerHTML = filtered.map(team => {
+        const post = venuePostForTeam(team);
+        const detail = post ? post.name : `Not placed · ${teamLocationName(team)}`;
+        return `<button type="button" class="venue-unit" draggable="true" data-move-team="${team.id}" data-status="${team.status}"${isFixedPost(team) ? ' data-fixed-post="true"' : ''}${isOnMealBreak(team) ? ' data-meal-break="true"' : ''} aria-pressed="${selectedVenueTeam === team.id}" aria-label="Select ${escapeHTML(team.name)}, ${escapeHTML(detail)}, ${statusNames[team.status]}${isOnMealBreak(team) ? ', on meal break' : ''}"><span class="venue-unit-name">${escapeHTML(team.name)}</span><span class="venue-unit-state">${isOnMealBreak(team) ? 'Meal break' : statusNames[team.status]}</span><span class="venue-unit-post">${escapeHTML(detail)}</span></button>`;
+    }).join('');
+}
+
+function renderVenueInspector() {
+    const team = teams.find(item => item.id === selectedVenueTeam);
+    document.getElementById('venue-inspector').hidden = !team;
+    document.getElementById('venue-selection').hidden = !team;
+    document.getElementById('venue-canvas').dataset.selecting = String(Boolean(team));
+    if (!team) return;
+    document.getElementById('venue-selected-name').textContent = team.name;
+    document.getElementById('venue-selected-post').textContent = venuePostForTeam(team)?.name || `Not placed · ${teamLocationName(team)}`;
+    const status = document.getElementById('venue-selected-status');
+    status.dataset.status = team.status;
+    status.innerHTML = Object.entries(statusNames).map(([value, label]) => `<option value="${value}"${value === team.status ? ' selected' : ''}>${label}</option>`).join('');
+    document.getElementById('venue-selected-destination').innerHTML = postOptions(team);
+    const mealButton = document.getElementById('venue-meal-action');
+    mealButton.hidden = Boolean(team.mealBreak && !isOnMealBreak(team));
+    mealButton.textContent = isOnMealBreak(team) ? 'Return from meal break' : 'Start meal break';
+    document.getElementById('venue-selected-break').textContent = isOnMealBreak(team)
+        ? `On meal break · Return ETA ${pacificFormatter.format(team.mealBreak.startedAt + mealBreakDuration)}`
+        : team.mealBreak ? `Meal break completed · ${pacificFormatter.format(team.mealBreak.returnedAt)}` : '';
+}
+
+function renderVenueMap() {
+    if (selectedVenue !== 'bill-graham') return;
+    const angle = venueAngle * Math.PI / 180;
+    const visible = venueLevels.filter(level => level.id !== '3' || showThirdFloor);
+    const focused = venueFloor !== 'all';
+    const floors = focused ? visible.filter(level => level.id === venueFloor) : [...visible].reverse();
+    const atPost = id => teams.filter(team => venuePostForTeam(team)?.id === id)
+        .sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true }));
+    const rowHeight = 44;
+    const columns = (post, count) => post.side === 'Basement' ? Math.min(5, Math.max(1, count))
+        : post.fixed ? Math.min(2, Math.max(1, count))
+        : post.side === 'Grove' && !['1', '2'].includes(post.level) ? Math.min(3, Math.max(1, count)) : 1;
+    let cursor = 12;
+    const layout = floors.map(level => {
+        const rowCounts = venuePosts.filter(post => post.level === level.id).map(post => {
+            const count = atPost(post.id).length;
+            return Math.ceil(count / columns(post, count));
+        });
+        if (level.id === '4') rowCounts.push(atPost('clinic-zone').length + atPost('venue-4-polk').length);
+        const band = Math.max(154, 110 + Math.max(0, ...rowCounts) * rowHeight);
+        const item = { level, y: cursor + 80, band };
+        cursor += band;
+        return item;
+    });
+    const height = Math.max(focused ? 240 : 0, cursor + 12);
+    const project = (x, z, y, bottom = 0) => [500 + x * Math.cos(angle) - z * Math.sin(angle), y + (x * Math.sin(angle) + z * Math.cos(angle)) * .3 + bottom];
+    const points = (coords, y, bottom = 0, stretch = 0) => coords.map(([x, z]) => {
+        const point = project(x, z, y, bottom);
+        point[1] += stretch * (z + 110) / 220;
+        return point.map(n => n.toFixed(1)).join(',');
+    }).join(' ');
+    const box = (x1, z1, x2, z2) => [[x1, z1], [x2, z1], [x2, z2], [x1, z2]];
+    const outer = box(-270, -110, 270, 110);
+    const ballColors = {
+        roaming: ['#b5efd1', '#278159', '#145c3e'], onscene: ['#ffbfc9', '#ce405b', '#96273e'],
+        transporting: ['#ffe1a8', '#b27a1e', '#805008'], atclinic: ['#b6dcff', '#3b81c9', '#245993'],
+        meal: ['#e0e6e2', '#87958c', '#5c6a61'], fixed: ['#fff', '#f3f6f4', '#d8e0da']
+    };
+    const gradients = Object.entries(ballColors).map(([status, colors]) => `<radialGradient id="venue-ball-${status}" cx="32%" cy="25%" r="75%"><stop offset="0" stop-color="${colors[0]}"/><stop offset=".55" stop-color="${colors[1]}"/><stop offset="1" stop-color="${colors[2]}"/></radialGradient>`).join('');
+    let drawing = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 ${height}" role="group" aria-labelledby="venue-svg-title"><title id="venue-svg-title">Bill Graham Civic Auditorium · ${focused ? floors[0].name : '3D view'}</title><defs>${gradients}</defs>`;
+    for (const { level, y } of [...layout].reverse()) {
+        const count = teams.filter(team => venuePostForTeam(team)?.level === level.id).length;
+        const basementStretch = level.id === 'b' ? Math.max(0, Math.ceil(count / 5) - 1) * rowHeight : 0;
+        const floorPoint = (x, z, bottom = 0) => {
+            const point = project(x, z, y, bottom);
+            point[1] += basementStretch * (z + 110) / 220;
+            return point;
+        };
+        drawing += `<g class="venue-floor" data-floor="${level.id}"><text x="24" y="${y - 2}" class="venue-floor-name">${level.name}</text><text x="24" y="${y + 18}" class="venue-floor-detail">${count} unit${count === 1 ? '' : 's'}</text>`;
+        for (const edge of [[outer[1], outer[2]], [outer[2], outer[3]], [outer[3], outer[0]]]) {
+            const face = [...edge.map(([x, z]) => floorPoint(x, z)), ...edge.slice().reverse().map(([x, z]) => floorPoint(x, z, 6))];
+            drawing += `<polygon points="${face.map(p => p.join(',')).join(' ')}" class="venue-slab-edge"/>`;
+        }
+        drawing += `<polygon points="${points(outer, y, 0, basementStretch)}" class="venue-slab"/>`;
+        if (level.id === '1') {
+            const [sx, sy] = project(0, -96, y);
+            drawing += `<polygon points="${points(box(-120, -107, 120, -85), y)}" class="venue-stage"/><text x="${sx}" y="${sy + 3}" text-anchor="middle" class="venue-stage-label">STAGE</text>`;
+        }
+        const groveHasRoaming = ['1', '2'].includes(level.id);
+        const shapes = level.id === 'b' ? [
+            { id: 'venue-b-basement', side: 'Basement', coords: outer, x: 0, z: 0 }
+        ] : [
+            { id: `venue-${level.id}-polk`, side: 'Polk', coords: box(-270, level.id === '4' ? 0 : -110, -170, 110), x: -220, z: level.id === '4' ? 65 : 0 },
+            { id: `venue-${level.id}-larkin`, side: 'Larkin', coords: box(170, -110, 270, 110), x: 220, z: 0 },
+            { id: `venue-${level.id}-grove`, side: 'Grove', coords: box(-165, 62, groveHasRoaming ? -4 : 165, 110), x: groveHasRoaming ? -83 : 0, z: 89 }
+        ];
+        if (groveHasRoaming) shapes.push({ id: `venue-${level.id}-roaming`, side: 'Grove', label: 'ROAMING', coords: box(4, 62, 165, 110), x: 84, z: 89 });
+        // Stage left is the performer's left facing Grove, inside the Larkin half of the auditorium.
+        if (level.id === '1') shapes.push({ id: 'venue-1-pit', side: 'Pit', coords: box(35, -80, 155, -5), x: 95, z: -43 });
+        if (level.id === '4') shapes.push({ id: 'clinic-zone', side: 'Main Medical', coords: box(-270, -110, -170, -6), x: -220, z: -70 });
+        // Destination surfaces paint before markers, so no neighboring zone can cover a unit.
+        const zoneData = shapes.map(shape => {
+            const members = atPost(shape.id);
+            const medical = shape.id === 'clinic-zone';
+            const post = medical ? mainMedicalPost : venuePosts.find(post => post.id === shape.id);
+            const [cx, cy] = project(shape.x, shape.z, y);
+            const selected = members.some(team => team.id === selectedVenueTeam);
+            const cls = `venue-destination${medical ? ' venue-medical' : ''}${selected ? ' venue-occupied-selected' : ''}`;
+            drawing += `<g class="${cls}" data-venue-post="${shape.id}" data-venue-side="${shape.side}"><polygon points="${points(shape.coords, y, 0, basementStretch)}" class="venue-zone-surface" tabindex="0" role="button" aria-label="${escapeHTML(post.name)}${post.fixed ? ', fixed post, stage left inside 1st floor auditorium' : ''}, ${members.length} units"/></g>`;
+            return { shape, members, cx, cy, post };
+        });
+        for (const { shape, members, cx, cy, post } of zoneData) {
+            // Marker groups retain their destination for drag hit testing and keyboard moves.
+            drawing += `<g class="venue-team-layer" data-venue-post="${shape.id}">`;
+            const cols = columns(post, members.length);
+            const medicalOffset = level.id === '4' && shape.side === 'Polk' ? Math.max(0, atPost('clinic-zone').length - 1) * rowHeight : 0;
+            const labelY = shape.id === 'clinic-zone' || shape.side === 'Pit' ? cy - 37
+                : cy + (members.length ? (Math.ceil(members.length / cols) - 1) * rowHeight + 25 + medicalOffset : 4);
+            drawing += `<text x="${cx}" y="${labelY}" text-anchor="middle" class="venue-side-label${shape.id === 'clinic-zone' ? ' venue-medical-label' : ''}">${shape.id === 'clinic-zone' ? '+ MEDICAL' : shape.label || shape.side.toUpperCase()}</text>`;
+            for (let slot = 0; slot < members.length; slot++) {
+                const team = members[slot];
+                const row = Math.floor(slot / cols);
+                const rowSize = Math.min(cols, members.length - row * cols);
+                const x = cx + (slot % cols - (rowSize - 1) / 2) * (post.fixed ? 72 : 104);
+                const markerY = cy + row * rowHeight + medicalOffset;
+                const label = team.name.length > 14 ? `${team.name.slice(0, 13)}…` : team.name;
+                const status = isOnMealBreak(team) ? 'meal' : isFixedPost(team) ? 'fixed' : team.status;
+                drawing += `<g class="venue-map-unit${team.id === selectedVenueTeam ? ' is-selected' : ''}" data-map-team="${team.id}" data-status="${team.status}"${isFixedPost(team) ? ' data-fixed-post="true"' : ''}${isOnMealBreak(team) ? ' data-meal-break="true"' : ''} role="button" tabindex="0" aria-label="Change status for ${escapeHTML(team.name)}, ${escapeHTML(post.name)}, ${statusNames[team.status]}${isOnMealBreak(team) ? ', on meal break' : ''}"><title>${escapeHTML(team.name)} · ${escapeHTML(post.name)} · ${statusNames[team.status]}${isFixedPost(team) ? ' · Fixed post' : ''}${isOnMealBreak(team) ? ' · On meal break' : ''}</title><circle class="venue-unit-hit" cx="${x}" cy="${markerY - 5}" r="23"/><ellipse class="venue-ball-shadow" cx="${x + 1}" cy="${markerY + 9}" rx="8" ry="2.5"/><circle class="venue-selection-ring" cx="${x}" cy="${markerY}" r="13"/><circle class="venue-unit-ball" cx="${x}" cy="${markerY}" r="8" fill="url(#venue-ball-${status})"/><text x="${x}" y="${markerY - 16}" text-anchor="middle" class="venue-marker-name">${escapeHTML(label)}</text></g>`;
+            }
+            drawing += '</g>';
+        }
+        drawing += '</g>';
+    }
+    drawing += '</svg>';
+    document.getElementById('venue-canvas').innerHTML = drawing;
+    document.getElementById('venue-rotate-left').disabled = venueAngle <= -30;
+    document.getElementById('venue-rotate-right').disabled = venueAngle >= 42;
+}
+
+function highlightVenueTarget(target) {
+    document.querySelectorAll('.venue-destination.is-drop-target').forEach(el => el.classList.remove('is-drop-target'));
+    if (target) document.querySelector(`.venue-destination[data-venue-post="${target.dataset.venuePost}"]`)?.classList.add('is-drop-target');
+}
+
+function finishVenueDrag() {
+    document.querySelector('.venue-drag-ghost')?.remove();
+    document.querySelectorAll('.venue-unit.dragging').forEach(el => el.classList.remove('dragging'));
+    document.getElementById('venue-canvas').classList.remove('is-dragging');
+    highlightVenueTarget(null);
+    venueDrag = null;
+}
+
+function initializeVenue() {
+    document.getElementById('venue-select').addEventListener('change', event => changeVenue(event.target.value));
+    document.getElementById('venue-show-third').addEventListener('change', event => {
+        showThirdFloor = event.target.checked;
+        if (!showThirdFloor && venueFloor === '3') venueFloor = 'all';
+        renderVenue();
+    });
+    document.getElementById('venue-team-picker').addEventListener('change', event => {
+        if (event.target.value) selectVenueTeam(event.target.value);
+        else { selectedVenueTeam = null; renderVenue(); }
+    });
+    for (const name of ['dispatch', 'venue']) document.getElementById(`${name}-tab`).addEventListener('click', () => setView(name));
+    document.querySelector('.view-tabs').addEventListener('keydown', event => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+        event.preventDefault();
+        setView(event.key === 'Home' ? 'dispatch' : event.key === 'End' ? 'venue' : activeView === 'dispatch' ? 'venue' : 'dispatch', true);
+    });
+    document.getElementById('venue-levels').addEventListener('click', event => {
+        const button = event.target.closest('[data-venue-level]');
+        if (!button) return;
+        venueFloor = button.dataset.venueLevel;
+        renderVenue();
+        document.querySelector(`[data-venue-level="${venueFloor}"]`).focus({ preventScroll: true });
+    });
+    document.getElementById('venue-rotate-left').addEventListener('click', () => { venueAngle = Math.max(-30, venueAngle - 12); renderVenueMap(); });
+    document.getElementById('venue-rotate-right').addEventListener('click', () => { venueAngle = Math.min(42, venueAngle + 12); renderVenueMap(); });
+    document.getElementById('venue-reset').addEventListener('click', () => { venueAngle = 18; venueFloor = 'all'; showThirdFloor = false; renderVenue(); });
+    document.getElementById('venue-search').addEventListener('input', renderVenueUnits);
+    document.getElementById('venue-unit-filter').addEventListener('change', renderVenueUnits);
+    document.getElementById('venue-deselect').addEventListener('click', () => {
+        selectedVenueTeam = null; renderVenue();
+        venueMessage('Selection cleared.');
+        document.getElementById('venue-search').focus({ preventScroll: true });
+    });
+    document.getElementById('venue-selected-status').addEventListener('change', event => updateStatus(selectedVenueTeam, event.target.value));
+    document.getElementById('venue-selected-destination').addEventListener('change', event => {
+        const id = selectedVenueTeam;
+        moveTeam(id, event.target.value);
+        const team = teams.find(item => item.id === id);
+        if (team) venueMessage(`${team.name} moved to ${teamLocationName(team)}. Both views updated.`);
+    });
+    document.getElementById('venue-meal-action').addEventListener('click', () => {
+        toggleMealBreak(selectedVenueTeam);
+        const button = document.getElementById('venue-meal-action');
+        (button.hidden ? document.getElementById('venue-selected-status') : button).focus({ preventScroll: true });
+    });
+    const list = document.getElementById('venue-unit-list');
+    list.addEventListener('click', event => {
+        const button = event.target.closest('[data-move-team]');
+        if (button && Date.now() >= suppressVenueClickUntil) selectVenueTeam(button.dataset.moveTeam, event.detail === 0);
+    });
+    list.addEventListener('dragstart', event => {
+        const button = event.target.closest('[data-move-team]');
+        if (!button) return;
+        selectedVenueTeam = button.dataset.moveTeam;
+        event.dataTransfer.setData('text/plain', selectedVenueTeam);
+        event.dataTransfer.effectAllowed = 'move';
+        button.classList.add('dragging');
+        document.getElementById('venue-canvas').classList.add('is-dragging');
+        renderVenueInspector();
+    });
+    list.addEventListener('dragend', () => {
+        suppressVenueClickUntil = Date.now() + 350;
+        finishVenueDrag();
+        renderVenue();
+    });
+    const canvas = document.getElementById('venue-canvas');
+    canvas.addEventListener('dragover', event => {
+        const target = event.target.closest('[data-venue-post]');
+        if (target) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; }
+        highlightVenueTarget(target);
+    });
+    canvas.addEventListener('dragleave', event => { if (!canvas.contains(event.relatedTarget)) highlightVenueTarget(null); });
+    canvas.addEventListener('drop', event => {
+        event.preventDefault();
+        const target = event.target.closest('[data-venue-post]');
+        const id = event.dataTransfer.getData('text/plain');
+        finishVenueDrag();
+        suppressVenueClickUntil = Date.now() + 350;
+        if (target) moveVenueTeam(id, target.dataset.venuePost);
+    });
+    const activateMap = event => {
+        if (Date.now() < suppressVenueClickUntil) return;
+        const unit = event.target.closest('[data-map-team]');
+        if (unit) {
+            cycleVenueTeamStatus(unit.dataset.mapTeam, event.type === 'keydown');
+            return;
+        }
+        const target = event.target.closest('[data-venue-post]');
+        if (!target) return;
+        if (selectedVenueTeam) {
+            const destination = target.dataset.venuePost;
+            moveVenueTeam(selectedVenueTeam, destination);
+            if (event.type === 'keydown') document.querySelector(`[data-venue-post="${destination}"] polygon`)?.focus({ preventScroll: true });
+        } else venueMessage('Select a unit in the unit list first, then choose its destination.');
+    };
+    canvas.addEventListener('click', activateMap);
+    canvas.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); activateMap(event); }
+    });
+    canvas.addEventListener('pointerdown', event => {
+        const unit = event.target.closest('[data-map-team]');
+        if (unit && event.button === 0) venueDrag = { id: unit.dataset.mapTeam, pointerId: event.pointerId, x: event.clientX, y: event.clientY, moving: false };
+    });
+    document.addEventListener('pointermove', event => {
+        if (!venueDrag || event.pointerId !== venueDrag.pointerId) return;
+        if (!venueDrag.moving && Math.hypot(event.clientX - venueDrag.x, event.clientY - venueDrag.y) < 6) return;
+        event.preventDefault();
+        if (!venueDrag.moving) {
+            venueDrag.moving = true;
+            const ghost = document.createElement('div');
+            ghost.className = 'venue-drag-ghost';
+            ghost.textContent = teams.find(team => team.id === venueDrag.id)?.name || '';
+            document.body.append(ghost);
+            canvas.classList.add('is-dragging');
+        }
+        const ghost = document.querySelector('.venue-drag-ghost');
+        ghost.style.left = `${event.clientX + 14}px`;
+        ghost.style.top = `${event.clientY - 18}px`;
+        highlightVenueTarget(document.elementFromPoint(event.clientX, event.clientY)?.closest('[data-venue-post]'));
+    }, { passive: false });
+    document.addEventListener('pointerup', event => {
+        if (!venueDrag || event.pointerId !== venueDrag.pointerId) return;
+        if (!venueDrag.moving) { venueDrag = null; return; }
+        const id = venueDrag.id;
+        const target = document.elementFromPoint(event.clientX, event.clientY)?.closest('[data-venue-post]');
+        suppressVenueClickUntil = Date.now() + 350;
+        finishVenueDrag();
+        if (target) moveVenueTeam(id, target.dataset.venuePost);
+        else venueMessage('Move cancelled. The unit kept its post.');
+    });
+    document.addEventListener('pointercancel', finishVenueDrag);
+    document.addEventListener('keydown', event => {
+        if (event.key !== 'Escape') return;
+        if (venueDrag) { suppressVenueClickUntil = Date.now() + 350; finishVenueDrag(); }
+        else if (activeView === 'venue' && selectedVenueTeam) { selectedVenueTeam = null; renderVenue(); venueMessage('Selection cleared.'); }
+    });
 }
 const pacificFormatter = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/Los_Angeles', hour: '2-digit', minute: '2-digit',
@@ -521,6 +1054,7 @@ document.addEventListener('keydown', e => {
         e.preventDefault(); undoChange();
     }
 });
+initializeVenue();
 refresh();
 
 function replaceBoard(board) {
@@ -528,6 +1062,8 @@ function replaceBoard(board) {
     teams = board.teams;
     locations = board.locations;
     handoffLog = board.handoffLog;
+    selectedVenue = board.venue || '';
+    venueBoardPosts = board.venueBoardPosts || [...defaultVenueBoardPosts];
     notes.value = savedNotes = board.notes;
     document.getElementById('form-error').hidden = true;
     refresh();
@@ -568,13 +1104,13 @@ backupFile.addEventListener('change', async () => {
 
 document.getElementById('demo-board').addEventListener('click', () => {
     if ((teams.length || locations.length || notes.value || handoffLog.length) && !confirm('Replace this board with sample units?')) return;
-    replaceBoard(readBoard({ teams: sampleTeams, locations: [], notes: '' }));
+    replaceBoard(readBoard({ teams: sampleTeams, locations: [], notes: '', venue: selectedVenue, venueBoardPosts }));
     showToolMessage('Sample units loaded.');
 });
 
 document.getElementById('clear-board').addEventListener('click', () => {
     if (!confirm('Clear all units, custom posts, shift notes, and time stamp entries?')) return;
-    replaceBoard({ teams: [], locations: [], notes: '', handoffLog: [] });
+    replaceBoard({ teams: [], locations: [], notes: '', handoffLog: [], venue: selectedVenue, venueBoardPosts: [...defaultVenueBoardPosts] });
     showToolMessage('Board cleared.');
 });
 

@@ -13,6 +13,30 @@ Tracks unit status, post assignments, status timers, meal breaks, and shift note
 
 Board data saves in the current browser. Existing saved boards and JSON backups remain compatible.
 
+## Venue 3D
+
+The top Venue selector controls venue-specific posts and the 3D view. With no venue selected, the 3D tab shows **No view**.
+
+Bill Graham includes these primary posts on the first tab, even before teams are placed:
+
+- 1st floor Grove, Polk, and Larkin.
+- 2nd floor Grove, Polk, and Larkin.
+- 1st roaming and 2nd roaming.
+
+Pit is an option under **Fixed posts**. Pit teams stay inside the Fixed posts section and appear at stage left inside the first-floor auditorium. Fixed-post teams use white markers and pale cards. Meal breaks use gray, including when the team is assigned to Pit. Fixed-post teams do not count toward dispatch availability.
+
+Both roaming posts sit along Grove on their respective floors. Tapping a map team cycles its status just like the first tab. Dragging changes its post without changing status.
+
+Basement is one area with no street-side divisions or team limit. Its floor area grows to fit additional rows. Older basement side assignments merge into Basement while keeping their teams, statuses, and timers.
+
+Post headings, roster post selectors, and map movements update the same assignments. Changing a post heading moves that group's field teams. Duplicate posts merge. Venue selection and post configuration are included in saved data, backups, and Undo.
+
+The map shows Basement, 1st, 2nd, and 4th floors by default. A third-floor toggle reveals that level without changing assignments. Main Medical remains on 4th floor, Polk. Each placed team is a colored ball with its call sign above it. The map fits the available viewport, and unit lists scroll separately.
+
+Main Medical retains the original **At Medical** behavior. Other field moves preserve status timers and meal breaks. Existing custom posts and older backups remain compatible. Clearing the venue preserves assignments.
+
+The model uses local SVG and JavaScript without external runtime dependencies.
+
 ## Files
 
 - `index.html`, `board.css`, and `board.js` are the shared app sources.
@@ -22,3 +46,7 @@ Board data saves in the current browser. Existing saved boards and JSON backups 
 After editing the shared sources, rebuild the standalone page with `python3 scripts/build-standalone.py`.
 
 Deploy the repo to GitHub Pages, or open `Event_EMS_Dispatch_Board.html` directly.
+
+## Checks
+
+Run `node tests/venue-state.test.mjs` for the 38 state and event checks. These cover venue selection, both assignment directions, fixed-post grouping and availability, Pit, roaming on Grove, map status taps, drag suppression, unified Basement assignments and large groups, hidden floors, named ball markers, Main Medical transitions, meal breaks, Undo, legacy backups, escaping, and move event handlers using an in-memory DOM fixture. They do not replace visual or device testing in a real browser.
