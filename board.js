@@ -17,7 +17,8 @@ const venuePosts = [
     }))),
     { id: 'venue-1-roaming', name: '1st roaming', level: '1', side: 'Grove', roaming: true },
     { id: 'venue-2-roaming', name: '2nd roaming', level: '2', side: 'Grove', roaming: true },
-    { id: 'venue-1-pit', name: 'Pit', level: '1', side: 'Pit', fixed: true }
+    { id: 'venue-1-pit', name: 'Pit', level: '1', side: 'Pit', fixed: true, mapDescription: 'stage left inside 1st floor auditorium' },
+    { id: 'venue-1-table-service', name: 'Table Service', level: '1', side: 'Grove', fixed: true, mapDescription: '1st floor Grove nearest Larkin' }
 ];
 const defaultVenueBoardPosts = ['venue-1-grove', 'venue-1-polk', 'venue-1-larkin',
     'venue-2-grove', 'venue-2-polk', 'venue-2-larkin', 'venue-1-roaming', 'venue-2-roaming'];
@@ -37,7 +38,8 @@ const sampleTeams = [
     { id: 't2', name: 'DEMO-2', status: 'onscene', zone: 'field-zone', location: 'venue-2-larkin' },
     { id: 't3', name: 'DEMO-3', status: 'transporting', zone: 'field-zone', location: 'venue-2-roaming' },
     { id: 't4', name: 'DEMO-4', status: 'atclinic', zone: 'clinic-zone', location: 'unassigned' },
-    { id: 't5', name: 'DEMO-5', status: 'roaming', zone: 'field-zone', location: 'venue-1-pit' }
+    { id: 't5', name: 'DEMO-5', status: 'roaming', zone: 'field-zone', location: 'venue-1-pit' },
+    { id: 't6', name: 'DEMO-6', status: 'roaming', zone: 'field-zone', location: 'venue-1-table-service' }
 ];
 let teams = [];
 let savedNotes = '';
@@ -779,7 +781,7 @@ function renderVenueMap() {
     const ballColors = {
         roaming: ['#b5efd1', '#278159', '#145c3e'], onscene: ['#ffbfc9', '#ce405b', '#96273e'],
         transporting: ['#ffe1a8', '#b27a1e', '#805008'], atclinic: ['#b6dcff', '#3b81c9', '#245993'],
-        meal: ['#e0e6e2', '#87958c', '#5c6a61'], fixed: ['#fff', '#f3f6f4', '#d8e0da']
+        meal: ['#e0e6e2', '#87958c', '#5c6a61'], fixed: ['#eceff0', '#b8c0c4', '#909ba1']
     };
     const gradients = Object.entries(ballColors).map(([status, colors]) => `<radialGradient id="venue-ball-${status}" cx="32%" cy="25%" r="75%"><stop offset="0" stop-color="${colors[0]}"/><stop offset=".55" stop-color="${colors[1]}"/><stop offset="1" stop-color="${colors[2]}"/></radialGradient>`).join('');
     let drawing = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 ${height}" role="group" aria-labelledby="venue-svg-title"><title id="venue-svg-title">Bill Graham Civic Auditorium · ${focused ? floors[0].name : '3D view'}</title><defs>${gradients}</defs>`;
@@ -802,17 +804,19 @@ function renderVenueMap() {
             drawing += `<polygon points="${points(box(-120, -107, 120, -85), y)}" class="venue-stage"/><text x="${sx}" y="${sy + 3}" text-anchor="middle" class="venue-stage-label">STAGE</text>`;
         }
         const groveHasRoaming = ['1', '2'].includes(level.id);
+        const groveHasTableService = level.id === '1';
         const shapes = level.id === 'b' ? [
             { id: 'venue-b-basement', side: 'Basement', coords: outer, x: 0, z: 0 }
         ] : [
-            { id: `venue-${level.id}-polk`, side: 'Polk', coords: box(-270, level.id === '4' ? 0 : -110, -170, 110), x: -220, z: level.id === '4' ? 65 : 0 },
-            { id: `venue-${level.id}-larkin`, side: 'Larkin', coords: box(170, -110, 270, 110), x: 220, z: 0 },
-            { id: `venue-${level.id}-grove`, side: 'Grove', coords: box(-165, 62, groveHasRoaming ? -4 : 165, 110), x: groveHasRoaming ? -83 : 0, z: 89 }
+            { id: `venue-${level.id}-polk`, side: 'Polk', coords: box(170, level.id === '4' ? 0 : -110, 270, 110), x: 220, z: level.id === '4' ? 65 : 0 },
+            { id: `venue-${level.id}-larkin`, side: 'Larkin', coords: box(-270, -110, -170, 110), x: -220, z: 0 },
+            { id: `venue-${level.id}-grove`, side: 'Grove', coords: box(groveHasTableService ? -65 : -165, 62, groveHasTableService ? 65 : groveHasRoaming ? -4 : 165, 110), x: groveHasTableService ? 0 : groveHasRoaming ? -83 : 0, z: 89 }
         ];
-        if (groveHasRoaming) shapes.push({ id: `venue-${level.id}-roaming`, side: 'Grove', label: 'ROAMING', coords: box(4, 62, 165, 110), x: 84, z: 89 });
-        // Stage left is the performer's left facing Grove, inside the Larkin half of the auditorium.
+        if (groveHasRoaming) shapes.push({ id: `venue-${level.id}-roaming`, side: 'Grove', label: 'ROAMING', coords: box(groveHasTableService ? 70 : 4, 62, 165, 110), x: groveHasTableService ? 120 : 84, z: 89 });
+        if (groveHasTableService) shapes.push({ id: 'venue-1-table-service', side: 'Grove', label: 'TABLE SERVICE', coords: box(-165, 62, -70, 110), x: -120, z: 89 });
+        // Stage left is the performer's left facing Grove, inside the Polk half of the auditorium.
         if (level.id === '1') shapes.push({ id: 'venue-1-pit', side: 'Pit', coords: box(35, -80, 155, -5), x: 95, z: -43 });
-        if (level.id === '4') shapes.push({ id: 'clinic-zone', side: 'Main Medical', coords: box(-270, -110, -170, -6), x: -220, z: -70 });
+        if (level.id === '4') shapes.push({ id: 'clinic-zone', side: 'Main Medical', coords: box(170, -110, 270, -6), x: 220, z: -70 });
         // Destination surfaces paint before markers, so no neighboring zone can cover a unit.
         const zoneData = shapes.map(shape => {
             const members = atPost(shape.id);
@@ -820,8 +824,8 @@ function renderVenueMap() {
             const post = medical ? mainMedicalPost : venuePosts.find(post => post.id === shape.id);
             const [cx, cy] = project(shape.x, shape.z, y);
             const selected = members.some(team => team.id === selectedVenueTeam);
-            const cls = `venue-destination${medical ? ' venue-medical' : ''}${selected ? ' venue-occupied-selected' : ''}`;
-            drawing += `<g class="${cls}" data-venue-post="${shape.id}" data-venue-side="${shape.side}"><polygon points="${points(shape.coords, y, 0, basementStretch)}" class="venue-zone-surface" tabindex="0" role="button" aria-label="${escapeHTML(post.name)}${post.fixed ? ', fixed post, stage left inside 1st floor auditorium' : ''}, ${members.length} units"/></g>`;
+            const cls = `venue-destination${medical ? ' venue-medical' : ''}${post.fixed ? ' venue-fixed-post' : ''}${selected ? ' venue-occupied-selected' : ''}`;
+            drawing += `<g class="${cls}" data-venue-post="${shape.id}" data-venue-side="${shape.side}"><polygon points="${points(shape.coords, y, 0, basementStretch)}" class="venue-zone-surface" tabindex="0" role="button" aria-label="${escapeHTML(post.name)}${post.fixed ? `, fixed post, ${escapeHTML(post.mapDescription)}` : ''}, ${members.length} units"/></g>`;
             return { shape, members, cx, cy, post };
         });
         for (const { shape, members, cx, cy, post } of zoneData) {

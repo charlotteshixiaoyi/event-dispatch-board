@@ -23,9 +23,9 @@ Bill Graham includes these primary posts on the first tab, even before teams are
 - 2nd floor Grove, Polk, and Larkin.
 - 1st roaming and 2nd roaming.
 
-Pit is an option under **Fixed posts**. Pit teams stay inside the Fixed posts section and appear at stage left inside the first-floor auditorium. Fixed-post teams use white markers and pale cards. Meal breaks use gray, including when the team is assigned to Pit. Fixed-post teams do not count toward dispatch availability.
+Pit and Table Service are options under **Fixed posts**. Pit appears at stage left inside the first-floor auditorium. Table Service appears on first-floor Grove nearest Larkin. Both stay nested inside the Fixed posts section. Their map areas and team markers use light gray, with pale cards on the board. Meal breaks use darker gray, including when the team is assigned to Pit. Fixed-post teams do not count toward dispatch availability.
 
-Both roaming posts sit along Grove on their respective floors. Tapping a map team cycles its status just like the first tab. Dragging changes its post without changing status.
+Larkin is on the left and Polk is on the right in the map. Main Medical follows the Polk side on the 4th floor. Both roaming posts sit along Grove on their respective floors. Tapping a map team cycles its status just like the first tab. Dragging changes its post without changing status.
 
 Basement is one area with no street-side divisions or team limit. Its floor area grows to fit additional rows. Older basement side assignments merge into Basement while keeping their teams, statuses, and timers.
 
@@ -49,4 +49,4 @@ Deploy the repo to GitHub Pages, or open `Event_EMS_Dispatch_Board.html` directl
 
 ## Checks
 
-Run `node tests/venue-state.test.mjs` for the 38 state and event checks. These cover venue selection, both assignment directions, fixed-post grouping and availability, Pit, roaming on Grove, map status taps, drag suppression, unified Basement assignments and large groups, hidden floors, named ball markers, Main Medical transitions, meal breaks, Undo, legacy backups, escaping, and move event handlers using an in-memory DOM fixture. They do not replace visual or device testing in a real browser.
+Run `node tests/venue-state.test.mjs` for the 42 state and event checks. These cover venue selection, both assignment directions, fixed-post grouping and availability, Pit, Table Service, street orientation, roaming on Grove, map status taps, drag suppression, unified Basement assignments and large groups, hidden floors, named ball markers, Main Medical transitions, meal breaks, Undo, legacy backups, escaping, and move event handlers using an in-memory DOM fixture. They do not replace visual or device testing in a real browser.

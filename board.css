@@ -260,6 +260,7 @@ body[data-venue="bill-graham"] .field-location:not(.venue-board-post) { grid-col
 .venue-stage { fill: #e9eeeb; stroke: #d5ddd7; stroke-width: .8; }
 .venue-stage-label { fill: #97a49c; font-family: system-ui, sans-serif; font-size: 9px; letter-spacing: 1px; pointer-events: none; }
 .venue-zone-surface { fill: #f7faf8; stroke: #e0e6e2; stroke-width: .8; cursor: pointer; }
+.venue-fixed-post .venue-zone-surface { fill: #e9ecee; stroke: #c9d0d4; }
 .venue-medical .venue-zone-surface { fill: #f0f6fc; stroke: #d0e0ef; }
 .venue-side-label { fill: #8b9990; font-family: system-ui, sans-serif; font-size: 11px; font-weight: 550; letter-spacing: 1px; pointer-events: none; }
 .venue-medical-label { fill: #7292b4; font-size: 10px; letter-spacing: .2px; }
@@ -269,7 +270,7 @@ body[data-venue="bill-graham"] .field-location:not(.venue-board-post) { grid-col
 .venue-unit-hit { fill: transparent; }
 .venue-ball-shadow { fill: #284f3830; pointer-events: none; }
 .venue-unit-ball { stroke: #fff; stroke-width: 1.5; }
-.venue-map-unit[data-fixed-post]:not([data-meal-break]) .venue-unit-ball { stroke: #a3b2a8; stroke-width: 1.2; }
+.venue-map-unit[data-fixed-post]:not([data-meal-break]) .venue-unit-ball { stroke: #87949c; stroke-width: 1.2; }
 .venue-selection-ring { fill: none; stroke: var(--teal); stroke-width: 2px; opacity: 0; }
 .venue-map-unit.is-selected .venue-selection-ring, .venue-map-unit:focus-visible .venue-selection-ring, .venue-map-unit:hover .venue-selection-ring { opacity: 1; }
 .venue-map-unit:focus-visible { outline: 0; }
@@ -281,7 +282,7 @@ body[data-venue="bill-graham"] .field-location:not(.venue-board-post) { grid-col
 .venue-legend [data-status="onscene"]::before { background: #ce405b; }
 .venue-legend [data-status="transporting"]::before { background: #b27a1e; }
 .venue-legend [data-status="atclinic"]::before { background: #3b81c9; }
-.venue-legend [data-status="fixed"]::before { width: 7px; height: 7px; background: #fff; border: 1px solid #a3b2a8; }
+.venue-legend [data-status="fixed"]::before { width: 7px; height: 7px; background: #b8c0c4; border: 1px solid #87949c; }
 .venue-legend [data-status="meal"]::before { background: #87958c; }
 .venue-sidebar { display: flex; flex-direction: column; gap: 10px; min-width: 0; min-height: 0; height: 100%; overflow: hidden; }
 .venue-unit-panel, .venue-inspector { min-width: 0; padding: 14px; border: 1px solid #d4dfd8; border-radius: 10px; background: #fff; }

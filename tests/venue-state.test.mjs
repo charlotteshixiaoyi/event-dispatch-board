@@ -29,7 +29,7 @@ test('selecting Bill Graham opens four levels and creates the eight main board p
  assert.equal(el('venue-content').hidden,false);
  assert.equal(el('venue-no-view').hidden,true);
  assert.equal(document.querySelectorAll('.venue-floor-name').length,4);
- assert.equal(document.querySelectorAll('.venue-zone-surface').length,14);
+ assert.equal(document.querySelectorAll('.venue-zone-surface').length,15);
  assert.equal(document.querySelector('[data-floor="3"]'),null);
  assert.equal(document.querySelectorAll('.post-name-select').length,8);
  assert.equal(el('custom-post-field').hidden,true);
@@ -271,8 +271,8 @@ test('Pit is inside the first-floor auditorium at performer stage left',()=>{
  const midpoint=poly=>{const points=poly.getAttribute('points').split(' ').map(pair=>pair.split(',').map(Number));return points.reduce((total,p)=>total+p[0],0)/points.length;};
  assert.ok(midpoint(pit)>midpoint(stage));
  assert.equal(pit.closest('.venue-floor').dataset.floor,'1');
- const larkin=document.querySelector('.venue-destination[data-venue-post="venue-1-larkin"] polygon');
- assert.ok(midpoint(pit)<midpoint(larkin));
+ const polk=document.querySelector('.venue-destination[data-venue-post="venue-1-polk"] polygon');
+ assert.ok(midpoint(pit)<midpoint(polk));
 });
 test('all fixed-post teams are marked pale and excluded from dispatch availability',()=>{
  run("moveTeam('t2','pit-table-service')");
@@ -285,7 +285,7 @@ test('all fixed-post teams are marked pale and excluded from dispatch availabili
  assert.ok(document.querySelector('[data-location="pit-table-service"] .location-count').textContent.includes('2 units'));
  assert.equal(run('venuePostForTeam(teams[1])'),undefined);
 });
-test('a fixed team on meal break uses the gray meal marker and returns to white afterward',()=>{
+test('a fixed team on meal break uses the gray meal marker and returns to fixed-post gray afterward',()=>{
  run("toggleMealBreak('t1')");
  assert.equal(document.querySelector('[data-map-team="t1"] .venue-unit-ball').getAttribute('fill'),'url(#venue-ball-meal)');
  assert.equal(document.querySelector('[data-map-team="t1"]').dataset.mealBreak,'true');
@@ -436,5 +436,79 @@ test('Basement accepts and displays a large team group without a team limit',()=
  const restored=JSON.parse(run('JSON.stringify(readBoard(JSON.parse(serializeBoard())))'));
  assert.equal(restored.teams.length,80);
  assert.ok(restored.teams.every(team=>team.location==='venue-b-basement'));
+});
+// Table Service shares the fixed-post behavior and uses the corrected street orientation.
+run(`replaceBoard(readBoard({teams:[{id:'t1',name:'TABLE-1',status:'roaming',location:'unassigned'},{id:'t2',name:'LARKIN-2',status:'roaming',location:'venue-2-larkin'},{id:'t3',name:'POLK-2',status:'transporting',location:'venue-2-polk'}],locations:[],venue:'bill-graham'}));venueFloor='all';showThirdFloor=false;venueAngle=18;setView('venue')`);
+test('Table Service is a fixed-post dropdown option and teams stay nested under Fixed posts',()=>{
+ const fixed=el('location-t1').querySelectorAll('optgroup').find(group=>group.getAttribute('label')==='Fixed posts');
+ assert.ok(fixed.querySelector('option[value="venue-1-table-service"]'));
+ const selector=el('location-t1');selector.value='venue-1-table-service';selector.fire('change');
+ assert.equal(state().teams[0].location,'venue-1-table-service');
+ assert.equal(state().teams[0].status,'roaming');
+ assert.equal(run('isFixedPost(teams[0])'),true);
+ const group=document.querySelector('.fixed-subpost[data-location="venue-1-table-service"]');
+ assert.equal(group.parentElement.dataset.location,'pit-table-service');
+ assert.ok(group.contains(el('t1')));
+ assert.equal(document.querySelectorAll('.field-location[data-location="venue-1-table-service"]').length,0);
+ assert.equal(el('t1').dataset.fixedPost,'true');
+ assert.equal(document.querySelector('[data-map-team="t1"] .venue-unit-ball').getAttribute('fill'),'url(#venue-ball-fixed)');
+ assert.equal(el('level-number').textContent,'1');
+});
+test('Table Service is on first-floor Grove at the end nearest Larkin',()=>{
+ const table=document.querySelector('.venue-destination[data-venue-post="venue-1-table-service"]');
+ assert.equal(table.dataset.venueSide,'Grove');
+ assert.equal(table.closest('.venue-floor').dataset.floor,'1');
+ assert.ok(table.querySelector('polygon').getAttribute('aria-label').includes('1st floor Grove nearest Larkin'));
+ const points=node=>node.getAttribute('points').split(' ').map(pair=>pair.split(',').map(Number));
+ const mid=id=>{const p=points(document.querySelector(`.venue-destination[data-venue-post="${id}"] polygon`));return p.reduce((sum,point)=>sum+point[0],0)/p.length;};
+ const tableX=mid('venue-1-table-service'),larkinX=mid('venue-1-larkin'),polkX=mid('venue-1-polk');
+ assert.ok(larkinX<tableX&&tableX<mid('venue-1-grove'));
+ assert.ok(Math.abs(tableX-larkinX)<Math.abs(mid('venue-1-grove')-larkinX));
+ assert.ok(Math.abs(tableX-larkinX)<Math.abs(tableX-polkX));
+ const t=points(table.querySelector('polygon')),g=points(document.querySelector('.venue-destination[data-venue-post="venue-1-grove"] polygon'));
+ const [a,b]=[g[2],g[3]];
+ const distance=p=>Math.abs((b[1]-a[1])*p[0]-(b[0]-a[0])*p[1]+b[0]*a[1]-b[1]*a[0])/Math.hypot(b[1]-a[1],b[0]-a[0]);
+ assert.ok(distance(t[2])<.25&&distance(t[3])<.25);
+ assert.equal(document.querySelector('[data-map-team="t1"]').closest('[data-venue-post]').dataset.venuePost,'venue-1-table-service');
+});
+test('Table Service supports map drops, Undo, backups, status taps, and meal-break styling',()=>{
+ const selector=el('location-t1');selector.value='venue-1-grove';selector.fire('change');
+ const before=state();
+ const transfer={values:{},setData(k,v){this.values[k]=v;},getData(k){return this.values[k]||'';}};
+ document.querySelector('[data-move-team="t1"]').fire('dragstart',{dataTransfer:transfer});
+ document.querySelector('.venue-destination[data-venue-post="venue-1-table-service"] polygon').fire('drop',{dataTransfer:transfer});
+ assert.equal(state().teams[0].location,'venue-1-table-service');
+ assert.equal(state().teams[0].status,'roaming');
+ assert.equal(state().teams[0].statusSince,before.teams[0].statusSince);
+ assert.equal(el('location-t1').value,'venue-1-table-service');
+ assert.equal(el('t1').closest('.field-location').dataset.location,'pit-table-service');
+ const restored=JSON.parse(run('JSON.stringify(readBoard(JSON.parse(serializeBoard())))'));
+ assert.equal(restored.teams[0].location,'venue-1-table-service');
+ run('undoChange()');assert.deepEqual(state(),before);
+ run("moveTeam('t1','venue-1-table-service');suppressVenueClickUntil=0");
+ document.querySelector('[data-map-team="t1"]').click();
+ assert.equal(state().teams[0].status,'onscene');
+ assert.equal(state().teams[0].location,'venue-1-table-service');
+ assert.equal(document.querySelector('[data-map-team="t1"] .venue-unit-ball').getAttribute('fill'),'url(#venue-ball-fixed)');
+ run("toggleMealBreak('t1')");
+ assert.equal(document.querySelector('[data-map-team="t1"] .venue-unit-ball').getAttribute('fill'),'url(#venue-ball-meal)');
+ run("toggleMealBreak('t1')");
+ assert.equal(document.querySelector('[data-map-team="t1"] .venue-unit-ball').getAttribute('fill'),'url(#venue-ball-fixed)');
+});
+test('Larkin is left and Polk is right on every floor, including assigned units and Main Medical',()=>{
+ const before=state();
+ const center=id=>{const points=document.querySelector(`.venue-destination[data-venue-post="${id}"] polygon`).getAttribute('points').split(' ').map(pair=>pair.split(',').map(Number));return points.reduce((sum,p)=>sum+p[0],0)/points.length;};
+ for(const angle of [-30,18,42]){
+  run(`showThirdFloor=true;venueFloor='all';venueAngle=${angle};renderVenue()`);
+  for(const level of ['1','2','3','4'])assert.ok(center(`venue-${level}-larkin`)<center(`venue-${level}-polk`));
+  assert.ok(Math.abs(center('clinic-zone')-center('venue-4-polk'))<Math.abs(center('clinic-zone')-center('venue-4-larkin')));
+  const larkin=Number(document.querySelector('[data-map-team="t2"] .venue-unit-ball').getAttribute('cx'));
+  const polk=Number(document.querySelector('[data-map-team="t3"] .venue-unit-ball').getAttribute('cx'));
+  assert.ok(larkin<polk);
+  assert.equal(el('location-t2').value,'venue-2-larkin');
+  assert.equal(el('location-t3').value,'venue-2-polk');
+ }
+ run("showThirdFloor=false;venueAngle=18;renderVenue()");
+ assert.deepEqual(state(),before);
 });
 console.log(`${passed} checks passed.`);
