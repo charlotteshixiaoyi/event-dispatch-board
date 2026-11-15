@@ -7,7 +7,12 @@ const source=fs.readFileSync(new URL('board.js',root),'utf8');
 const html=fs.readFileSync(new URL('index.html',root),'utf8');
 const document=makeDocument(html);
 const data=new Map();
-const context=vm.createContext({document,localStorage:{getItem:k=>data.get(k)??null,setItem:(k,v)=>data.set(k,v)},navigator:{},location:{protocol:'file:'},Intl,Date,Set,Map,JSON,Math,Object,Number,String,Array,Blob,URL,setInterval(){},setTimeout(){},confirm:()=>true});
+const frames=new Map();
+let frameId=0;
+const scrollWindow={innerHeight:800,scrollY:400,addEventListener(){},scrollBy({top}){this.scrollY=Math.max(0,this.scrollY+top);}};
+const browserGlobals={window:scrollWindow,getComputedStyle:node=>({overflowY:node.style.overflowY||'visible'}),requestAnimationFrame:callback=>{frames.set(++frameId,callback);return frameId;},cancelAnimationFrame:id=>frames.delete(id)};
+const nextFrame=time=>{const callbacks=[...frames.values()];frames.clear();for(const callback of callbacks)callback(time);};
+const context=vm.createContext({...browserGlobals,document,localStorage:{getItem:k=>data.get(k)??null,setItem:(k,v)=>data.set(k,v)},navigator:{},location:{protocol:'file:'},Intl,Date,Set,Map,JSON,Math,Object,Number,String,Array,Blob,URL,setInterval(){},setTimeout(){},confirm:()=>true});
 const run=code=>vm.runInContext(code,context);
 const state=()=>JSON.parse(run('serializeBoard()'));
 const el=id=>document.getElementById(id);
@@ -24,12 +29,12 @@ test('no selected venue shows No view without rendering the map',()=>{
  assert.equal(el('venue-content').hidden,true);
  assert.equal(document.querySelectorAll('.venue-floor-name').length,0);
 });
-test('selecting Bill Graham opens four levels and creates the eight main board posts',()=>{
+test('selecting Bill Graham opens three standard levels and creates the eight main board posts',()=>{
  el('venue-select').value='bill-graham';el('venue-select').fire('change');
  assert.equal(el('venue-content').hidden,false);
  assert.equal(el('venue-no-view').hidden,true);
- assert.equal(document.querySelectorAll('.venue-floor-name').length,4);
- assert.equal(document.querySelectorAll('.venue-zone-surface').length,15);
+ assert.equal(document.querySelectorAll('.venue-floor-name').length,3);
+ assert.equal(document.querySelectorAll('.venue-zone-surface').length,14);
  assert.equal(document.querySelector('[data-floor="3"]'),null);
  assert.equal(document.querySelectorAll('.post-name-select').length,8);
  assert.equal(el('custom-post-field').hidden,true);
@@ -65,6 +70,7 @@ test('all floor-side destinations and the unified basement round-trip through ba
  }
 });
 test('non-medical map moves preserve status, status timer and active meal break',()=>{
+ el('venue-show-basement').checked=true;el('venue-show-basement').fire('change');
  run(`toggleMealBreak('t1')`);
  const before=state().teams[0];
  run(`moveVenueTeam('t1','venue-b-basement')`);
@@ -132,6 +138,8 @@ test('map marker pointer drag routes correctly and cancellation keeps the post',
  assert.equal(state().teams[1].location,'venue-4-larkin');
 });
 test('floor filters, rotation, and reset do not mutate assignments',()=>{
+ el('venue-show-third').checked=false;el('venue-show-third').fire('change');
+ el('venue-show-basement').checked=false;el('venue-show-basement').fire('change');
  const before=state();
  document.querySelector('[data-venue-level="2"]').click();
  assert.equal(document.querySelectorAll('.venue-floor').length,1);
@@ -141,7 +149,7 @@ test('floor filters, rotation, and reset do not mutate assignments',()=>{
  assert.equal(document.querySelectorAll('.venue-zone-surface').length,4);
  assert.equal(document.querySelector('.venue-floor-name').textContent,'4th floor');
  el('venue-reset').click();
- assert.equal(document.querySelectorAll('.venue-floor').length,4);
+ assert.equal(document.querySelectorAll('.venue-floor').length,3);
  assert.deepEqual(state(),before);
 });
 test('unit filters do not remove teams; deletion clears the selected inspector',()=>{
@@ -208,7 +216,7 @@ test('third-floor visibility is reversible and does not change assignments',()=>
  document.querySelector('[data-venue-level="3"]').click();
  assert.equal(document.querySelectorAll('.venue-floor').length,1);
  el('venue-show-third').checked=false;el('venue-show-third').fire('change');
- assert.equal(document.querySelectorAll('.venue-floor').length,4);
+ assert.equal(document.querySelectorAll('.venue-floor').length,3);
  assert.equal(document.querySelector('[data-floor="3"]'),null);
  assert.deepEqual(state(),before);
 });
@@ -391,6 +399,7 @@ test('the Medical shortcut is removed while the Medical map destination remains'
  assert.ok(document.querySelector('.venue-destination[data-venue-post="clinic-zone"] polygon'));
 });
 test('Basement is one map destination and has no street-side dropdowns',()=>{
+ el('venue-show-basement').checked=true;el('venue-show-basement').fire('change');
  document.querySelector('[data-venue-level="b"]').click();
  assert.equal(document.querySelectorAll('.venue-zone-surface').length,1);
  assert.equal(document.querySelector('.venue-destination').dataset.venuePost,'venue-b-basement');
@@ -405,7 +414,7 @@ test('Basement is one map destination and has no street-side dropdowns',()=>{
 });
 test('old basement side assignments and board posts merge without losing teams or timers',()=>{
  const before=Date.now()-10000;
- const legacy={teams:['polk','larkin','grove'].map((side,i)=>({id:'told'+i,name:'OLD-'+i,status:'roaming',location:'venue-b-'+side,statusSince:before})),locations:[],venue:'bill-graham',venueBoardPosts:['venue-b-polk','venue-b-larkin','venue-b-grove']};
+ const legacy={teams:['polk','larkin','grove'].map((side,i)=>({id:'told'+i,name:'OLD-'+i,status:'roaming',location:'venue-b-'+side,statusSince:before})),locations:[],venue:'bill-graham',additionalVenueLocations:['b'],venueBoardPosts:['venue-b-polk','venue-b-larkin','venue-b-grove']};
  run(`replaceBoard(readBoard(${JSON.stringify(legacy)}))`);
  assert.equal(state().teams.length,3);
  assert.deepEqual(state().venueBoardPosts,['venue-b-basement']);
@@ -415,7 +424,7 @@ test('old basement side assignments and board posts merge without losing teams o
  assert.deepEqual(state().teams.map(team=>team.name),['OLD-0','OLD-1','OLD-2']);
 });
 test('Basement accepts and displays a large team group without a team limit',()=>{
- const many={teams:Array.from({length:80},(_,i)=>({id:'tbase'+i,name:'BASE-'+i,status:'roaming',location:i?'venue-b-basement':'unassigned'})),locations:[],venue:'bill-graham'};
+ const many={teams:Array.from({length:80},(_,i)=>({id:'tbase'+i,name:'BASE-'+i,status:'roaming',location:i?'venue-b-basement':'unassigned'})),locations:[],venue:'bill-graham',additionalVenueLocations:['b']};
  run(`replaceBoard(readBoard(${JSON.stringify(many)}))`);
  assert.equal(state().teams.length,80);
  document.querySelector('[data-move-team="tbase0"]').click();
@@ -438,7 +447,7 @@ test('Basement accepts and displays a large team group without a team limit',()=
  assert.ok(restored.teams.every(team=>team.location==='venue-b-basement'));
 });
 // Table Service shares the fixed-post behavior and uses the corrected street orientation.
-run(`replaceBoard(readBoard({teams:[{id:'t1',name:'TABLE-1',status:'roaming',location:'unassigned'},{id:'t2',name:'LARKIN-2',status:'roaming',location:'venue-2-larkin'},{id:'t3',name:'POLK-2',status:'transporting',location:'venue-2-polk'}],locations:[],venue:'bill-graham'}));venueFloor='all';showThirdFloor=false;venueAngle=18;setView('venue')`);
+run(`replaceBoard(readBoard({teams:[{id:'t1',name:'TABLE-1',status:'roaming',location:'unassigned'},{id:'t2',name:'LARKIN-2',status:'roaming',location:'venue-2-larkin'},{id:'t3',name:'POLK-2',status:'transporting',location:'venue-2-polk'}],locations:[],venue:'bill-graham'}));venueFloor='all';additionalVenueLocations=[];venueAngle=18;setView('venue')`);
 test('Table Service is a fixed-post dropdown option and teams stay nested under Fixed posts',()=>{
  const fixed=el('location-t1').querySelectorAll('optgroup').find(group=>group.getAttribute('label')==='Fixed posts');
  assert.ok(fixed.querySelector('option[value="venue-1-table-service"]'));
@@ -499,7 +508,7 @@ test('Larkin is left and Polk is right on every floor, including assigned units 
  const before=state();
  const center=id=>{const points=document.querySelector(`.venue-destination[data-venue-post="${id}"] polygon`).getAttribute('points').split(' ').map(pair=>pair.split(',').map(Number));return points.reduce((sum,p)=>sum+p[0],0)/points.length;};
  for(const angle of [-30,18,42]){
-  run(`showThirdFloor=true;venueFloor='all';venueAngle=${angle};renderVenue()`);
+  run(`additionalVenueLocations=['3'];venueFloor='all';venueAngle=${angle};renderVenue()`);
   for(const level of ['1','2','3','4'])assert.ok(center(`venue-${level}-larkin`)<center(`venue-${level}-polk`));
   assert.ok(Math.abs(center('clinic-zone')-center('venue-4-polk'))<Math.abs(center('clinic-zone')-center('venue-4-larkin')));
   const larkin=Number(document.querySelector('[data-map-team="t2"] .venue-unit-ball').getAttribute('cx'));
@@ -508,7 +517,7 @@ test('Larkin is left and Polk is right on every floor, including assigned units 
   assert.equal(el('location-t2').value,'venue-2-larkin');
   assert.equal(el('location-t3').value,'venue-2-polk');
  }
- run("showThirdFloor=false;venueAngle=18;renderVenue()");
+ run("additionalVenueLocations=[];venueAngle=18;renderVenue()");
  assert.deepEqual(state(),before);
 });
 // Pit position is a saved venue setting shared by the board and map controls.
@@ -572,7 +581,7 @@ test('Pit side is saved, restored from backups, and loaded on app startup',()=>{
  run('replaceBoard(readBoard(JSON.parse(serializeBoard())))');assert.deepEqual(state(),saved);
  const startupDocument=makeDocument(html);
  const startupData=new Map([['charlotte-dispatch-board-v1',JSON.stringify(saved)]]);
- const startupContext=vm.createContext({document:startupDocument,localStorage:{getItem:key=>startupData.get(key)??null,setItem:(key,value)=>startupData.set(key,value)},navigator:{},location:{protocol:'file:'},Intl,Date,Set,Map,JSON,Math,Object,Number,String,Array,Blob,URL,setInterval(){},setTimeout(){},confirm:()=>true});
+ const startupContext=vm.createContext({...browserGlobals,document:startupDocument,localStorage:{getItem:key=>startupData.get(key)??null,setItem:(key,value)=>startupData.set(key,value)},navigator:{},location:{protocol:'file:'},Intl,Date,Set,Map,JSON,Math,Object,Number,String,Array,Blob,URL,setInterval(){},setTimeout(){},confirm:()=>true});
  vm.runInContext(source,startupContext);
  assert.equal(startupDocument.getElementById('board-pit-side').value,'stage-right');
  assert.equal(startupDocument.getElementById('map-pit-side').value,'stage-right');
@@ -590,5 +599,175 @@ test('Pit configuration survives camera reset and routine board actions; old bac
  el('clear-board').click();assert.equal(state().pitSide,'stage-right');
  assert.equal(el('board-pit-side').value,'stage-right');
  run('undoChange()');assert.equal(state().pitSide,'stage-right');
+});
+test('Unassigned stays last after custom, venue, occupied, restored and undone posts',()=>{
+ const last=()=>document.querySelectorAll('#field-locations .field-location').at(-1).dataset.location;
+ run("replaceBoard(readBoard({teams:[],locations:[]}))");
+ assert.equal(last(),'unassigned');
+ el('newLocationInput').value='Back gate';el('location-form').fire('submit');
+ assert.equal(last(),'unassigned');
+ run("changeVenue('bill-graham');toggleAdditionalVenueLocation('outside',true);toggleAdditionalVenueLocation('b',true);toggleAdditionalVenueLocation('3',true)");
+ assert.equal(last(),'unassigned');
+ run("teams.push({id:'tedge',name:'EDGE',status:'roaming',zone:'field-zone',location:'venue-4-grove',statusSince:Date.now()});refresh()");
+ assert.equal(last(),'unassigned');
+ run('replaceBoard(readBoard(JSON.parse(serializeBoard())));undoChange()');
+ assert.equal(last(),'unassigned');
+ run("changeVenue('')");assert.equal(last(),'unassigned');
+});
+test('one additional-location menu offers Outside of Venue, Basement and Third floor, all off by default',()=>{
+ run("replaceBoard(readBoard({teams:[{id:'topt',name:'OPTIONAL',status:'onscene',location:'unassigned'}],locations:[],venue:'bill-graham'}));setView('venue')");
+ const menu=el('venue-additional-locations');
+ assert.equal(menu.querySelector('summary').textContent,'Add additional location');
+ assert.deepEqual(menu.querySelectorAll('label').map(label=>label.textContent),['Outside of Venue','Basement','Third floor']);
+ for(const id of ['venue-show-outside','venue-show-basement','venue-show-third'])assert.equal(el(id).checked,false);
+ for(const level of ['b','3'])assert.equal(document.querySelector(`[data-floor="${level}"]`),null);
+ assert.equal(document.querySelector('.venue-outside-area'),null);
+});
+test('each optional location can be enabled independently and appears before Unassigned on the board',()=>{
+ for(const [toggle,level,post] of [['outside','outside','venue-outside'],['basement','b','venue-b-basement'],['third','3','venue-3-grove']]){
+  el(`venue-show-${toggle}`).checked=true;el(`venue-show-${toggle}`).fire('change');
+  assert.ok(document.querySelector(`.venue-destination[data-venue-post="${post}"] polygon`));
+  assert.ok(document.querySelector(`[data-location="${post}"]`));
+  assert.ok(state().additionalVenueLocations.includes(level));
+  assert.equal(document.querySelectorAll('#field-locations .field-location').at(-1).dataset.location,'unassigned');
+ }
+ assert.equal(document.querySelectorAll('.venue-floor').length,5);
+});
+test('Outside of Venue accepts native map drops, keyboard moves and dispatch-board drops',()=>{
+ const transfer={values:{},setData(k,v){this.values[k]=v;},getData(k){return this.values[k]||'';}};
+ const before=state().teams[0];
+ document.querySelector('[data-move-team="topt"]').fire('dragstart',{clientX:400,clientY:300,dataTransfer:transfer});
+ document.querySelector('.venue-destination[data-venue-post="venue-outside"] polygon').fire('dragover',{dataTransfer:transfer});
+ assert.ok(document.querySelector('.venue-destination[data-venue-post="venue-outside"]').classList.contains('is-drop-target'));
+ document.querySelector('.venue-destination[data-venue-post="venue-outside"] polygon').fire('drop',{dataTransfer:transfer});
+ assert.equal(state().teams[0].location,'venue-outside');
+ assert.equal(state().teams[0].status,before.status);
+ assert.equal(state().teams[0].statusSince,before.statusSince);
+ assert.equal(document.querySelector('[data-map-team="topt"]').closest('[data-venue-post]').dataset.venuePost,'venue-outside');
+ assert.ok(document.querySelector('[data-location="venue-outside"]').textContent.includes('OPTIONAL'));
+ run("moveTeam('topt','venue-1-polk');selectVenueTeam('topt');suppressVenueClickUntil=0");
+ document.querySelector('.venue-destination[data-venue-post="venue-outside"] polygon').fire('keydown',{key:'Enter'});
+ assert.equal(state().teams[0].location,'venue-outside');
+ run("moveTeam('topt','unassigned');setView('dispatch')");
+ el('topt').fire('dragstart',{clientX:400,clientY:300,dataTransfer:transfer});
+ document.querySelector('[data-location="venue-outside"]').fire('drop',{dataTransfer:transfer});
+ assert.equal(state().teams[0].location,'venue-outside');
+ assert.equal(run('dragScroll'),null);
+ run("setView('venue')");
+});
+test('hiding optional locations preserves assignments and resets a hidden focused floor',()=>{
+ run("toggleMealBreak('topt')");
+ const before=state().teams[0];
+ document.querySelector('[data-venue-level="b"]').click();
+ el('venue-show-basement').checked=false;el('venue-show-basement').fire('change');
+ assert.equal(document.querySelector('[data-venue-level="b"]'),null);
+ assert.equal(document.querySelector('[data-venue-level="all"]').getAttribute('aria-pressed'),'true');
+ el('venue-show-outside').checked=false;el('venue-show-outside').fire('change');
+ assert.equal(document.querySelector('.venue-outside-area'),null);
+ assert.deepEqual(state().teams[0],before);
+ assert.ok(document.querySelector('[data-location="venue-outside"] .team-badge'));
+ assert.equal(el('venue-outside-label').textContent,'Outside of Venue (1)');
+ run('undoChange()');
+ assert.ok(document.querySelector('.venue-outside-area [data-map-team="topt"]'));
+ assert.ok(document.querySelector('[data-map-team="topt"]').getAttribute('data-meal-break'));
+});
+test('optional locations and outside assignments survive backups, startup and camera reset',()=>{
+ const saved=state();
+ const restored=JSON.parse(run('JSON.stringify(readBoard(JSON.parse(serializeBoard())))'));
+ assert.deepEqual(restored,saved);
+ const startupDocument=makeDocument(html);
+ const startupData=new Map([['charlotte-dispatch-board-v1',JSON.stringify(saved)]]);
+ const startupContext=vm.createContext({...browserGlobals,document:startupDocument,localStorage:{getItem:key=>startupData.get(key)??null,setItem:(key,value)=>startupData.set(key,value)},navigator:{},location:{protocol:'file:'},Intl,Date,Set,Map,JSON,Math,Object,Number,String,Array,Blob,URL,setInterval(){},setTimeout(){},confirm:()=>true});
+ vm.runInContext(source,startupContext);
+ vm.runInContext("setView('venue')",startupContext);
+ assert.equal(startupDocument.getElementById('venue-show-outside').checked,true);
+ assert.equal(startupDocument.getElementById('venue-show-third').checked,true);
+ assert.equal(startupDocument.getElementById('venue-show-basement').checked,false);
+ assert.ok(startupDocument.querySelector('.venue-outside-area [data-map-team="topt"]'));
+ el('venue-reset').click();assert.deepEqual(state(),saved);
+ for(const value of [undefined,null,'outside',['outside','outside','invalid',3]]){
+  const expected=Array.isArray(value)?['outside']:[];
+  assert.deepEqual(JSON.parse(run(`JSON.stringify(readBoard(${JSON.stringify({teams:[],locations:[],additionalVenueLocations:value})}).additionalVenueLocations)`)),expected);
+ }
+});
+test('a crowded Outside of Venue box grows to keep every team inside its drop area',()=>{
+ run("replaceBoard(readBoard({teams:Array.from({length:24},(_,i)=>({id:'tout'+i,name:'OUT-'+i,status:'roaming',location:'venue-outside'})),locations:[],venue:'bill-graham',additionalVenueLocations:['outside']}))");
+ const polygon=document.querySelector('.venue-destination[data-venue-post="venue-outside"] polygon').getAttribute('points').split(' ').map(pair=>pair.split(',').map(Number));
+ assert.equal(document.querySelectorAll('.venue-outside-area .venue-unit-ball').length,24);
+ for(const ball of document.querySelectorAll('.venue-outside-area .venue-unit-ball')){
+  const x=Number(ball.getAttribute('cx')),y=Number(ball.getAttribute('cy'));
+  assert.ok(x-8>polygon[0][0]&&x+8<polygon[1][0]&&y-8>polygon[0][1]&&y+8<polygon[2][1]);
+ }
+});
+test('native team dragging scrolls down and up at viewport edges, keeps scrolling while held, and stops in the middle',()=>{
+ const transfer={setData(){}};
+ const before=state();
+ document.hitTarget=el('tout0');
+ scrollWindow.scrollY=400;
+ el('tout0').fire('dragstart',{clientX:300,clientY:790,dataTransfer:transfer});
+ nextFrame(0);assert.ok(scrollWindow.scrollY>400);
+ const held=scrollWindow.scrollY;nextFrame(16);assert.ok(scrollWindow.scrollY>held);
+ document.fire('dragover',{clientX:300,clientY:10});
+ const down=scrollWindow.scrollY;nextFrame(32);assert.ok(scrollWindow.scrollY<down);
+ document.fire('dragover',{clientX:300,clientY:400});
+ const middle=scrollWindow.scrollY;nextFrame(48);assert.equal(scrollWindow.scrollY,middle);
+ el('tout0').fire('dragend');
+ assert.equal(frames.size,0);assert.equal(run('dragScroll'),null);
+ assert.deepEqual(state(),before);
+});
+test('dropping or cancelling a native drag stops all further scrolling',()=>{
+ for(const type of ['drop','dragend']){
+  el('tout0').fire('dragstart',{clientX:300,clientY:790,dataTransfer:{setData(){}}});
+  nextFrame(0);
+  document.fire(type);
+  const position=scrollWindow.scrollY;nextFrame(16);
+  assert.equal(scrollWindow.scrollY,position);assert.equal(frames.size,0);
+ }
+ el('tout0').fire('dragstart',{clientX:300,clientY:790,dataTransfer:{setData(){}}});
+ document.fire('keydown',{key:'Escape'});assert.equal(frames.size,0);
+});
+test('a scrollable unit list consumes edge scrolling before the page',()=>{
+ const list=el('venue-unit-list');
+ list.scrollHeight=1200;list.clientHeight=300;list.scrollTop=200;list.style.overflowY='auto';
+ list.getBoundingClientRect=()=>({top:200,bottom:500});
+ document.hitTarget=document.querySelector('[data-move-team="tout0"]');
+ const page=scrollWindow.scrollY;
+ document.hitTarget.fire('dragstart',{clientX:300,clientY:490,dataTransfer:{setData(){}}});
+ nextFrame(0);assert.ok(list.scrollTop>200);assert.equal(scrollWindow.scrollY,page);
+ document.fire('dragover',{clientX:300,clientY:210});
+ const down=list.scrollTop;nextFrame(16);assert.ok(list.scrollTop<down);
+ document.fire('dragend');
+ list.scrollHeight=0;list.clientHeight=0;document.hitTarget=null;
+});
+test('pointer dragging a map marker scrolls the page and still drops into Outside of Venue',()=>{
+ run("moveTeam('tout0','venue-1-polk');suppressVenueClickUntil=0");
+ const before=state().teams[0];
+ document.querySelector('[data-map-team="tout0"]').fire('pointerdown',{button:0,pointerId:90,clientX:300,clientY:300});
+ document.hitTarget=document.querySelector('.venue-destination[data-venue-post="venue-outside"] polygon');
+ document.fire('pointermove',{pointerId:90,clientX:300,clientY:790});
+ const start=scrollWindow.scrollY;nextFrame(0);assert.ok(scrollWindow.scrollY>start);
+ document.fire('pointermove',{pointerId:90,clientX:300,clientY:10});
+ const down=scrollWindow.scrollY;nextFrame(16);assert.ok(scrollWindow.scrollY<down);
+ document.fire('pointerup',{pointerId:90,clientX:300,clientY:10});
+ assert.equal(state().teams[0].location,'venue-outside');
+ assert.equal(state().teams[0].status,before.status);assert.equal(state().teams[0].statusSince,before.statusSince);
+ assert.equal(frames.size,0);assert.equal(run('dragScroll'),null);
+ document.hitTarget=null;
+});
+test('the default three floors use a larger fitted layout with no clipped slabs at any camera angle',()=>{
+ run("replaceBoard(readBoard({teams:sampleTeams,locations:[],venue:'bill-graham'}));venueFloor='all';venueAngle=18;renderVenue()");
+ let box=el('venue-canvas').querySelector('svg').getAttribute('viewBox').split(' ').map(Number);
+ assert.ok(box[2]<840&&box[3]<486,'the normal three floors fill more of the map viewport');
+ for(const angle of [-30,18,42]){
+  run(`venueAngle=${angle};renderVenue()`);
+  box=el('venue-canvas').querySelector('svg').getAttribute('viewBox').split(' ').map(Number);
+  assert.equal(document.querySelectorAll('.venue-floor').length,3);
+  for(const polygon of document.querySelectorAll('.venue-slab'))for(const [x,y] of polygon.getAttribute('points').split(' ').map(pair=>pair.split(',').map(Number))){
+   assert.ok(x>=box[0]&&x<=box[0]+box[2]&&y>=box[1]&&y<=box[1]+box[3],'each full floor fits inside the screen-scaled SVG');
+  }
+ }
+ run("venueAngle=18;toggleAdditionalVenueLocation('b',true)");
+ assert.equal(document.querySelectorAll('.venue-floor').length,4);
+ assert.ok(el('venue-canvas').querySelector('svg').getAttribute('viewBox').startsWith('0 0 840 '));
 });
 console.log(`${passed} checks passed.`);

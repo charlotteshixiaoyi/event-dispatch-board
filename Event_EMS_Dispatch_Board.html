@@ -259,8 +259,12 @@ body[data-venue="bill-graham"] .field-location:not(.venue-board-post) { grid-col
 .venue-levels { display: flex; gap: 2px; padding: 3px; background: #edf2ee; border-radius: 6px; }
 .venue-levels button { min-width: 30px; min-height: 32px; padding: 5px 8px; border: 0; border-radius: 4px; background: transparent; color: #5a6d61; font-size: .73rem; font-weight: 650; }
 .venue-levels button[aria-pressed="true"] { background: #fff; color: var(--ink); box-shadow: 0 1px 3px #17372712; }
-.third-floor-toggle { display: flex; align-items: center; gap: 4px; min-height: 36px; color: #68766e; font-size: .65rem; white-space: nowrap; cursor: pointer; }
-.third-floor-toggle input { accent-color: var(--teal); }
+.additional-locations { position: relative; z-index: 3; color: #52665a; font-size: .72rem; }
+.additional-locations summary { min-height: 36px; padding: 9px; border: 1px solid #dce4df; border-radius: 5px; background: #fff; cursor: pointer; }
+.additional-locations-menu { position: absolute; top: calc(100% + 5px); left: 0; min-width: 218px; padding: 6px; border: 1px solid #d4dfd8; border-radius: 7px; background: #fff; box-shadow: 0 6px 20px #17372720; }
+.additional-locations-menu label { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 6px 9px; white-space: nowrap; cursor: pointer; }
+.additional-locations-menu label:hover { background: #edf5ef; border-radius: 4px; }
+.additional-locations-menu input { width: 16px; height: 16px; accent-color: var(--teal); }
 .venue-camera { display: flex; gap: 3px; margin-left: auto; }
 .venue-camera button { min-width: 30px; min-height: 34px; border: 1px solid #dce4df; border-radius: 5px; padding: 5px 7px; background: #fff; color: var(--muted); font-size: 1rem; }
 .venue-camera button:last-child { font-size: .66rem; }
@@ -276,6 +280,7 @@ body[data-venue="bill-graham"] .field-location:not(.venue-board-post) { grid-col
 .venue-zone-surface { fill: #f7faf8; stroke: #e0e6e2; stroke-width: .8; cursor: pointer; }
 .venue-fixed-post .venue-zone-surface { fill: #e9ecee; stroke: #c9d0d4; }
 .venue-medical .venue-zone-surface { fill: #f0f6fc; stroke: #d0e0ef; }
+.venue-outside-area .venue-zone-surface { fill: #f1f6f2; stroke: #bacdbf; stroke-dasharray: 5 4; }
 .venue-side-label { fill: #8b9990; font-family: system-ui, sans-serif; font-size: 11px; font-weight: 550; letter-spacing: 1px; pointer-events: none; }
 .venue-medical-label { fill: #7292b4; font-size: 10px; letter-spacing: .2px; }
 .venue-canvas[data-selecting="true"] .venue-zone-surface:hover, .venue-destination.is-drop-target .venue-zone-surface { fill: #e0f0e7; stroke: #72ae8c; stroke-width: 2px; }
@@ -485,7 +490,14 @@ body[data-venue="bill-graham"] .field-location:not(.venue-board-post) { grid-col
                     <div class="venue-map-toolbar">
                         <div id="venue-levels" class="venue-levels" role="group" aria-label="Show venue level"></div>
                         <label class="pit-side-control" for="map-pit-side">Pit<select id="map-pit-side" class="pit-side-select"><option value="stage-left">Stage left · Polk</option><option value="stage-right">Stage right · Larkin</option></select></label>
-                        <label class="third-floor-toggle"><input type="checkbox" id="venue-show-third"><span id="venue-third-label">3rd floor</span></label>
+                        <details class="additional-locations" id="venue-additional-locations">
+                            <summary>Add additional location</summary>
+                            <div class="additional-locations-menu" role="group" aria-label="Additional venue locations">
+                                <label><input type="checkbox" id="venue-show-outside"><span id="venue-outside-label">Outside of Venue</span></label>
+                                <label><input type="checkbox" id="venue-show-basement"><span id="venue-basement-label">Basement</span></label>
+                                <label><input type="checkbox" id="venue-show-third"><span id="venue-third-label">Third floor</span></label>
+                            </div>
+                        </details>
                         <div class="venue-camera" role="group" aria-label="3D view controls">
                             <button type="button" id="venue-rotate-left" title="Rotate left" aria-label="Rotate venue left">↶</button>
                             <button type="button" id="venue-rotate-right" title="Rotate right" aria-label="Rotate venue right">↷</button>
@@ -577,11 +589,17 @@ const venueLevels = [
     { id: '4', name: '4th floor', short: '4', detail: 'Main Medical · Polk' }
 ];
 const venueSides = ['Grove', 'Polk', 'Larkin'];
+const optionalVenueLocations = [
+    { id: 'outside', name: 'Outside of Venue', toggle: 'venue-show-outside', label: 'venue-outside-label' },
+    { id: 'b', name: 'Basement', toggle: 'venue-show-basement', label: 'venue-basement-label' },
+    { id: '3', name: 'Third floor', toggle: 'venue-show-third', label: 'venue-third-label' }
+];
 const pitSides = {
     'stage-left': { label: 'Stage left · Polk', street: 'Polk', x: 95, minX: 35, maxX: 155 },
     'stage-right': { label: 'Stage right · Larkin', street: 'Larkin', x: -95, minX: -155, maxX: -35 }
 };
 const venuePosts = [
+    { id: 'venue-outside', name: 'Outside of Venue', level: 'outside', side: 'Outside' },
     { id: 'venue-b-basement', name: 'Basement', level: 'b', side: 'Basement' },
     ...venueLevels.filter(level => level.id !== 'b').flatMap(level => venueSides.map(side => ({
         id: `venue-${level.id}-${side.toLowerCase()}`, name: `${level.name} ${side}`, level: level.id, side
@@ -596,7 +614,7 @@ const defaultVenueBoardPosts = ['venue-1-grove', 'venue-1-polk', 'venue-1-larkin
 let selectedVenue = '';
 let pitSide = 'stage-left';
 let venueBoardPosts = [...defaultVenueBoardPosts];
-let showThirdFloor = false;
+let additionalVenueLocations = [];
 const mainMedicalPost = { id: 'clinic-zone', name: 'Main Medical · 4th floor · Polk', level: '4', side: 'Polk' };
 let activeView = 'dispatch';
 let selectedVenueTeam = null;
@@ -620,6 +638,78 @@ let handoffLog = [];
 const undoHistory = [];
 let notesCheckpoint = null;
 let lastDragEnd = 0;
+let dragScroll = null;
+let dragScrollFrame = null;
+
+// Keep scrolling while a dragged team stays near an edge, even when the pointer pauses.
+function edgeScrollSpeed(position, start, end, edge = 88) {
+    const size = Math.min(edge, (end - start) / 3);
+    if (position < start || position > end) return 0;
+    if (position < start + size) return -720 * (1 - (position - start) / size);
+    if (position > end - size) return 720 * (1 - (end - position) / size);
+    return 0;
+}
+function updateDragScroll(event) {
+    if (dragScroll && Number.isFinite(event.clientX) && Number.isFinite(event.clientY)) {
+        dragScroll.x = event.clientX;
+        dragScroll.y = event.clientY;
+    }
+}
+function stopDragScroll() {
+    if (dragScrollFrame !== null) cancelAnimationFrame(dragScrollFrame);
+    dragScrollFrame = null;
+    dragScroll = null;
+}
+function startDragScroll(event) {
+    stopDragScroll();
+    dragScroll = { x: event.clientX, y: event.clientY, lastTime: null };
+    dragScrollFrame = requestAnimationFrame(scrollDraggedTeam);
+}
+function scrollDraggedTeam(time) {
+    if (!dragScroll) return;
+    const { x, y, lastTime } = dragScroll;
+    const seconds = Math.min(32, lastTime === null ? 16 : time - lastTime) / 1000;
+    dragScroll.lastTime = time;
+    let scrolled = false;
+    // A long Units list scrolls itself before the surrounding page.
+    for (let node = document.elementFromPoint(x, y); node && node !== document.body && node !== document.documentElement; node = node.parentElement) {
+        if (!(node.scrollHeight > node.clientHeight) || !/(auto|scroll)/.test(getComputedStyle(node).overflowY)) continue;
+        const rect = node.getBoundingClientRect();
+        const top = Math.max(0, rect.top);
+        const bottom = Math.min(window.innerHeight, rect.bottom);
+        const distance = edgeScrollSpeed(y, top, bottom, 64) * seconds;
+        if (!distance) continue;
+        const before = node.scrollTop;
+        node.scrollTop = Math.max(0, Math.min(node.scrollHeight - node.clientHeight, before + distance));
+        if (node.scrollTop !== before) { scrolled = true; break; }
+    }
+    if (!scrolled) {
+        const distance = edgeScrollSpeed(y, 0, window.innerHeight) * seconds;
+        if (distance) window.scrollBy({ top: distance, behavior: 'instant' });
+    }
+    if (venueDrag?.moving) highlightVenueTarget(document.elementFromPoint(x, y)?.closest('[data-venue-post]'));
+    dragScrollFrame = requestAnimationFrame(scrollDraggedTeam);
+}
+function initializeDragScrolling() {
+    let nativeTeamDragging = false;
+    const stopNativeDrag = () => { nativeTeamDragging = false; stopDragScroll(); };
+    document.addEventListener('dragstart', event => {
+        if (event.target.closest('.team-badge, [data-move-team]')) {
+            nativeTeamDragging = true;
+            startDragScroll(event);
+        }
+    });
+    document.addEventListener('dragover', event => {
+        if (nativeTeamDragging && !dragScroll) startDragScroll(event);
+        else updateDragScroll(event);
+    }, true);
+    for (const type of ['drop', 'dragend', 'pointercancel']) document.addEventListener(type, stopNativeDrag, true);
+    document.addEventListener('dragleave', event => {
+        if (event.target === document.documentElement && !event.relatedTarget) stopDragScroll();
+    });
+    document.addEventListener('keydown', event => { if (event.key === 'Escape') stopNativeDrag(); });
+    window.addEventListener('blur', stopNativeDrag);
+}
 function canonicalLocation(id) {
     return ['venue-b-polk', 'venue-b-larkin', 'venue-b-grove'].includes(id) ? 'venue-b-basement' : id;
 }
@@ -671,7 +761,9 @@ function readBoard(saved) {
         ? [...new Set(saved.venueBoardPosts.map(canonicalLocation).filter(id => venuePosts.some(post => post.id === id && !post.fixed)))]
         : [...defaultVenueBoardPosts];
     const pitSide = validPitSide(saved.pitSide) ? saved.pitSide : 'stage-left';
-    return { teams, locations, notes: typeof saved.notes === 'string' ? saved.notes : '', handoffLog, venue, venueBoardPosts, pitSide };
+    const additionalVenueLocations = Array.isArray(saved.additionalVenueLocations)
+        ? [...new Set(saved.additionalVenueLocations.filter(id => optionalVenueLocations.some(location => location.id === id)))] : [];
+    return { teams, locations, notes: typeof saved.notes === 'string' ? saved.notes : '', handoffLog, venue, venueBoardPosts, pitSide, additionalVenueLocations };
 }
 
 try {
@@ -685,6 +777,7 @@ try {
         selectedVenue = saved.venue;
         venueBoardPosts = saved.venueBoardPosts;
         pitSide = saved.pitSide;
+        additionalVenueLocations = saved.additionalVenueLocations;
     }
 } catch {
     // Storage is checked again on the first save so the operator sees any error.
@@ -708,9 +801,10 @@ function escapeHTML(value) {
 }
 function fieldLocations() { return [...locations, ...builtInLocations, ...venuePosts]; }
 function visibleFieldLocations() {
-    return fieldLocations().filter(location => !location.fixed && (!venuePosts.some(post => post.id === location.id)
+    const visible = fieldLocations().filter(location => !location.fixed && (!venuePosts.some(post => post.id === location.id)
         || (selectedVenue === 'bill-graham' && venueBoardPosts.includes(location.id))
         || teams.some(team => team.zone === 'field-zone' && team.location === location.id)));
+    return [...visible.filter(location => location.id !== 'unassigned'), ...visible.filter(location => location.id === 'unassigned')];
 }
 function isFixedPost(team) {
     return team.zone === 'field-zone' && (team.location === 'pit-table-service'
@@ -721,7 +815,7 @@ function venuePostForTeam(team) {
     return team.zone === 'clinic-zone' ? mainMedicalPost : venuePosts.find(post => post.id === team.location);
 }
 function boardState(notes = document.getElementById('shift-notes').value) {
-    return { teams, locations, notes, venue: selectedVenue, venueBoardPosts, pitSide };
+    return { teams, locations, notes, venue: selectedVenue, venueBoardPosts, pitSide, additionalVenueLocations };
 }
 function serializeBoard() {
     return JSON.stringify({ ...boardState(), handoffLog });
@@ -740,6 +834,7 @@ function undoChange() {
     selectedVenue = previous.venue || '';
     venueBoardPosts = previous.venueBoardPosts || [...defaultVenueBoardPosts];
     pitSide = validPitSide(previous.pitSide) ? previous.pitSide : 'stage-left';
+    additionalVenueLocations = previous.additionalVenueLocations || [];
     handoffLog = log;
     handoffLog.length = logLength;
     document.getElementById('shift-notes').value = previous.notes;
@@ -1168,6 +1263,7 @@ function allowDrop(e) { e.preventDefault(); e.stopPropagation(); e.currentTarget
 function dragLeave(e) { if (!e.currentTarget.contains(e.relatedTarget)) e.currentTarget.classList.remove('drag-over'); }
 function drop(e, zoneId, location = 'unassigned') {
     e.preventDefault(); e.stopPropagation();
+    stopDragScroll();
     document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
     moveTeam(e.dataTransfer.getData('text/plain'), zoneId === 'clinic-zone' ? 'clinic-zone' : location);
 }
@@ -1187,6 +1283,7 @@ function billGrahamPostOptions(current) {
     const option = post => `<option value="${post.id}"${current === post.id ? ' selected' : ''}>${escapeHTML(post.name)}</option>`;
     return `<optgroup label="Bill Graham posts">${defaultVenueBoardPosts.map(id => venuePosts.find(post => post.id === id)).map(option).join('')}</optgroup>`
         + `<optgroup label="Fixed posts">${venuePosts.filter(post => post.fixed).map(option).join('')}</optgroup>`
+        + `<optgroup label="Additional locations">${venuePosts.filter(post => post.level === 'outside').map(option).join('')}</optgroup>`
         + venueLevels.map(level => {
             const additional = venuePosts.filter(post => post.level === level.id && !post.fixed && !defaultVenueBoardPosts.includes(post.id));
             return additional.length ? `<optgroup label="${level.name}">${additional.map(option).join('')}</optgroup>` : '';
@@ -1203,6 +1300,30 @@ function renderVenueControls() {
     const select = document.getElementById('newVenuePostSelect');
     const value = select.value;
     select.innerHTML = billGraham ? billGrahamPostOptions(value) : '';
+    for (const location of optionalVenueLocations) {
+        document.getElementById(location.toggle).checked = additionalVenueLocations.includes(location.id);
+        const count = teams.filter(team => venuePostForTeam(team)?.level === location.id).length;
+        document.getElementById(location.label).textContent = `${location.name}${count ? ` (${count})` : ''}`;
+    }
+}
+function visibleVenueLevels() {
+    return venueLevels.filter(level => !optionalVenueLocations.some(location => location.id === level.id)
+        || additionalVenueLocations.includes(level.id));
+}
+function toggleAdditionalVenueLocation(id, enabled) {
+    if (selectedVenue !== 'bill-graham' || !optionalVenueLocations.some(location => location.id === id)
+        || additionalVenueLocations.includes(id) === enabled) return;
+    rememberChange();
+    const posts = venuePosts.filter(post => post.level === id && !post.fixed).map(post => post.id);
+    additionalVenueLocations = additionalVenueLocations.filter(location => location !== id);
+    if (enabled) {
+        additionalVenueLocations.push(id);
+        venueBoardPosts = [...new Set([...venueBoardPosts, ...posts])];
+    } else {
+        venueBoardPosts = venueBoardPosts.filter(post => !posts.includes(post));
+        if (venueFloor === id) venueFloor = 'all';
+    }
+    refresh();
 }
 function changeVenue(value) {
     const next = value === 'bill-graham' ? value : '';
@@ -1210,7 +1331,6 @@ function changeVenue(value) {
     rememberChange();
     selectedVenue = next;
     selectedVenueTeam = null;
-    showThirdFloor = false;
     venueFloor = 'all';
     finishVenueDrag();
     refresh();
@@ -1283,10 +1403,8 @@ function renderVenue() {
     if (!teams.some(team => team.id === selectedVenueTeam)) selectedVenueTeam = null;
     const placed = teams.filter(team => venuePostForTeam(team)).length;
     document.getElementById('venue-unit-count').textContent = `${placed}/${teams.length} placed`;
-    const visibleLevels = venueLevels.filter(level => level.id !== '3' || showThirdFloor);
-    document.getElementById('venue-show-third').checked = showThirdFloor;
-    const thirdCount = teams.filter(team => venuePostForTeam(team)?.level === '3').length;
-    document.getElementById('venue-third-label').textContent = `3rd floor${thirdCount ? ` (${thirdCount})` : ''}`;
+    const visibleLevels = visibleVenueLevels();
+    if (venueFloor !== 'all' && !visibleLevels.some(level => level.id === venueFloor)) venueFloor = 'all';
     document.getElementById('venue-levels').innerHTML = [{ id: 'all', short: 'All', name: 'All levels' }, ...visibleLevels].map(level => {
         const count = teams.filter(team => venuePostForTeam(team)?.level === level.id).length;
         return `<button type="button" data-venue-level="${level.id}" aria-label="${level.name}${level.id === 'all' ? '' : `, ${count} units`}" aria-pressed="${venueFloor === level.id}">${level.short}</button>`;
@@ -1336,29 +1454,39 @@ function renderVenueInspector() {
 function renderVenueMap() {
     if (selectedVenue !== 'bill-graham') return;
     const angle = venueAngle * Math.PI / 180;
-    const visible = venueLevels.filter(level => level.id !== '3' || showThirdFloor);
+    const visible = visibleVenueLevels();
     const focused = venueFloor !== 'all';
     const floors = focused ? visible.filter(level => level.id === venueFloor) : [...visible].reverse();
+    const threeFloorView = !focused && additionalVenueLocations.length === 0;
+    const slabDepth = (270 * Math.abs(Math.sin(angle)) + 110 * Math.abs(Math.cos(angle))) * .3;
+    const mapCenter = threeFloorView ? 425 : 500;
+    const mapWidth = threeFloorView ? 760 : 840;
     const atPost = id => teams.filter(team => venuePostForTeam(team)?.id === id)
         .sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true }));
     const rowHeight = 44;
     const columns = (post, count) => post.side === 'Basement' ? Math.min(5, Math.max(1, count))
         : post.fixed ? Math.min(2, Math.max(1, count))
         : post.side === 'Grove' && !['1', '2'].includes(post.level) ? Math.min(3, Math.max(1, count)) : 1;
-    let cursor = 12;
+    let cursor = threeFloorView ? 4 : 12;
     const layout = floors.map(level => {
         const rowCounts = venuePosts.filter(post => post.level === level.id).map(post => {
             const count = atPost(post.id).length;
             return Math.ceil(count / columns(post, count));
         });
         if (level.id === '4') rowCounts.push(atPost('clinic-zone').length + atPost('venue-4-polk').length);
-        const band = Math.max(154, 110 + Math.max(0, ...rowCounts) * rowHeight);
-        const item = { level, y: cursor + 80, band };
+        const band = Math.max(threeFloorView ? slabDepth * 2 + 24 : 154,
+            (threeFloorView ? 90 : 110) + Math.max(0, ...rowCounts) * rowHeight);
+        const item = { level, y: cursor + (threeFloorView ? slabDepth + 12 : 80), band };
         cursor += band;
         return item;
     });
-    const height = Math.max(focused ? 240 : 0, cursor + 12);
-    const project = (x, z, y, bottom = 0) => [500 + x * Math.cos(angle) - z * Math.sin(angle), y + (x * Math.sin(angle) + z * Math.cos(angle)) * .3 + bottom];
+    const outsideMembers = atPost('venue-outside');
+    const outsideVisible = additionalVenueLocations.includes('outside');
+    const outsideColumns = Math.min(3, Math.max(1, outsideMembers.length));
+    const outsideY = cursor + 10;
+    const outsideHeight = 58 + Math.max(1, Math.ceil(outsideMembers.length / outsideColumns)) * rowHeight;
+    const height = Math.max(focused ? 240 : 0, outsideVisible ? outsideY + outsideHeight + 12 : cursor + 12);
+    const project = (x, z, y, bottom = 0) => [mapCenter + x * Math.cos(angle) - z * Math.sin(angle), y + (x * Math.sin(angle) + z * Math.cos(angle)) * .3 + bottom];
     const points = (coords, y, bottom = 0, stretch = 0) => coords.map(([x, z]) => {
         const point = project(x, z, y, bottom);
         point[1] += stretch * (z + 110) / 220;
@@ -1372,7 +1500,12 @@ function renderVenueMap() {
         meal: ['#e0e6e2', '#87958c', '#5c6a61'], fixed: ['#eceff0', '#b8c0c4', '#909ba1']
     };
     const gradients = Object.entries(ballColors).map(([status, colors]) => `<radialGradient id="venue-ball-${status}" cx="32%" cy="25%" r="75%"><stop offset="0" stop-color="${colors[0]}"/><stop offset=".55" stop-color="${colors[1]}"/><stop offset="1" stop-color="${colors[2]}"/></radialGradient>`).join('');
-    let drawing = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 ${height}" role="group" aria-labelledby="venue-svg-title"><title id="venue-svg-title">Bill Graham Civic Auditorium · ${focused ? floors[0].name : '3D view'}</title><defs>${gradients}</defs>`;
+    const teamMarker = (team, post, x, markerY) => {
+        const label = team.name.length > 14 ? `${team.name.slice(0, 13)}…` : team.name;
+        const status = isOnMealBreak(team) ? 'meal' : isFixedPost(team) ? 'fixed' : team.status;
+        return `<g class="venue-map-unit${team.id === selectedVenueTeam ? ' is-selected' : ''}" data-map-team="${team.id}" data-status="${team.status}"${isFixedPost(team) ? ' data-fixed-post="true"' : ''}${isOnMealBreak(team) ? ' data-meal-break="true"' : ''} role="button" tabindex="0" aria-label="Change status for ${escapeHTML(team.name)}, ${escapeHTML(post.name)}, ${statusNames[team.status]}${isOnMealBreak(team) ? ', on meal break' : ''}"><title>${escapeHTML(team.name)} · ${escapeHTML(post.name)} · ${statusNames[team.status]}${isFixedPost(team) ? ' · Fixed post' : ''}${isOnMealBreak(team) ? ' · On meal break' : ''}</title><circle class="venue-unit-hit" cx="${x}" cy="${markerY - 5}" r="23"/><ellipse class="venue-ball-shadow" cx="${x + 1}" cy="${markerY + 9}" rx="8" ry="2.5"/><circle class="venue-selection-ring" cx="${x}" cy="${markerY}" r="13"/><circle class="venue-unit-ball" cx="${x}" cy="${markerY}" r="8" fill="url(#venue-ball-${status})"/><text x="${x}" y="${markerY - 16}" text-anchor="middle" class="venue-marker-name">${escapeHTML(label)}</text></g>`;
+    };
+    let drawing = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${mapWidth} ${height}" role="group" aria-labelledby="venue-svg-title"><title id="venue-svg-title">Bill Graham Civic Auditorium · ${focused ? floors[0].name : '3D view'}</title><defs>${gradients}</defs>`;
     for (const { level, y } of [...layout].reverse()) {
         const count = teams.filter(team => venuePostForTeam(team)?.level === level.id).length;
         const basementStretch = level.id === 'b' ? Math.max(0, Math.ceil(count / 5) - 1) * rowHeight : 0;
@@ -1435,13 +1568,22 @@ function renderVenueMap() {
                 const pitMarker = shape.side === 'Pit' ? project(shape.x + column * 80, shape.z, y) : null;
                 const x = pitMarker ? pitMarker[0] : cx + column * (post.fixed ? 72 : 104);
                 const markerY = (pitMarker ? pitMarker[1] : cy) + row * rowHeight + medicalOffset;
-                const label = team.name.length > 14 ? `${team.name.slice(0, 13)}…` : team.name;
-                const status = isOnMealBreak(team) ? 'meal' : isFixedPost(team) ? 'fixed' : team.status;
-                drawing += `<g class="venue-map-unit${team.id === selectedVenueTeam ? ' is-selected' : ''}" data-map-team="${team.id}" data-status="${team.status}"${isFixedPost(team) ? ' data-fixed-post="true"' : ''}${isOnMealBreak(team) ? ' data-meal-break="true"' : ''} role="button" tabindex="0" aria-label="Change status for ${escapeHTML(team.name)}, ${escapeHTML(post.name)}, ${statusNames[team.status]}${isOnMealBreak(team) ? ', on meal break' : ''}"><title>${escapeHTML(team.name)} · ${escapeHTML(post.name)} · ${statusNames[team.status]}${isFixedPost(team) ? ' · Fixed post' : ''}${isOnMealBreak(team) ? ' · On meal break' : ''}</title><circle class="venue-unit-hit" cx="${x}" cy="${markerY - 5}" r="23"/><ellipse class="venue-ball-shadow" cx="${x + 1}" cy="${markerY + 9}" rx="8" ry="2.5"/><circle class="venue-selection-ring" cx="${x}" cy="${markerY}" r="13"/><circle class="venue-unit-ball" cx="${x}" cy="${markerY}" r="8" fill="url(#venue-ball-${status})"/><text x="${x}" y="${markerY - 16}" text-anchor="middle" class="venue-marker-name">${escapeHTML(label)}</text></g>`;
+                drawing += teamMarker(team, post, x, markerY);
             }
             drawing += '</g>';
         }
         drawing += '</g>';
+    }
+    if (outsideVisible) {
+        const post = venuePosts.find(post => post.id === 'venue-outside');
+        drawing += `<g class="venue-outside-area" data-venue-post="${post.id}"><g class="venue-destination" data-venue-post="${post.id}"><polygon points="320,${outsideY} 680,${outsideY} 680,${outsideY + outsideHeight} 320,${outsideY + outsideHeight}" class="venue-zone-surface" tabindex="0" role="button" aria-label="Outside of Venue, ${outsideMembers.length} units"/></g><text x="500" y="${outsideY + 25}" text-anchor="middle" class="venue-floor-name">Outside of Venue</text><text x="500" y="${outsideY + 44}" text-anchor="middle" class="venue-floor-detail">${outsideMembers.length} unit${outsideMembers.length === 1 ? '' : 's'}</text><g class="venue-team-layer" data-venue-post="${post.id}">`;
+        for (let slot = 0; slot < outsideMembers.length; slot++) {
+            const row = Math.floor(slot / outsideColumns);
+            const rowSize = Math.min(outsideColumns, outsideMembers.length - row * outsideColumns);
+            const x = 500 + (slot % outsideColumns - (rowSize - 1) / 2) * 104;
+            drawing += teamMarker(outsideMembers[slot], post, x, outsideY + 76 + row * rowHeight);
+        }
+        drawing += '</g></g>';
     }
     drawing += '</svg>';
     document.getElementById('venue-canvas').innerHTML = drawing;
@@ -1455,6 +1597,7 @@ function highlightVenueTarget(target) {
 }
 
 function finishVenueDrag() {
+    stopDragScroll();
     document.querySelector('.venue-drag-ghost')?.remove();
     document.querySelectorAll('.venue-unit.dragging').forEach(el => el.classList.remove('dragging'));
     document.getElementById('venue-canvas').classList.remove('is-dragging');
@@ -1465,10 +1608,13 @@ function finishVenueDrag() {
 function initializeVenue() {
     document.getElementById('map-pit-side').addEventListener('change', event => changePitSide(event.target.value, event.target.id));
     document.getElementById('venue-select').addEventListener('change', event => changeVenue(event.target.value));
-    document.getElementById('venue-show-third').addEventListener('change', event => {
-        showThirdFloor = event.target.checked;
-        if (!showThirdFloor && venueFloor === '3') venueFloor = 'all';
-        renderVenue();
+    for (const location of optionalVenueLocations) document.getElementById(location.toggle).addEventListener('change', event => {
+        toggleAdditionalVenueLocation(location.id, event.target.checked);
+    });
+    const additionalMenu = document.getElementById('venue-additional-locations');
+    document.addEventListener('click', event => { if (!additionalMenu.contains(event.target)) additionalMenu.open = false; });
+    additionalMenu.addEventListener('keydown', event => {
+        if (event.key === 'Escape') { additionalMenu.open = false; additionalMenu.querySelector('summary').focus(); event.stopPropagation(); }
     });
     document.getElementById('venue-team-picker').addEventListener('change', event => {
         if (event.target.value) selectVenueTeam(event.target.value);
@@ -1489,7 +1635,7 @@ function initializeVenue() {
     });
     document.getElementById('venue-rotate-left').addEventListener('click', () => { venueAngle = Math.max(-30, venueAngle - 12); renderVenueMap(); });
     document.getElementById('venue-rotate-right').addEventListener('click', () => { venueAngle = Math.min(42, venueAngle + 12); renderVenueMap(); });
-    document.getElementById('venue-reset').addEventListener('click', () => { venueAngle = 18; venueFloor = 'all'; showThirdFloor = false; renderVenue(); });
+    document.getElementById('venue-reset').addEventListener('click', () => { venueAngle = 18; venueFloor = 'all'; renderVenue(); });
     document.getElementById('venue-search').addEventListener('input', renderVenueUnits);
     document.getElementById('venue-unit-filter').addEventListener('change', renderVenueUnits);
     document.getElementById('venue-deselect').addEventListener('click', () => {
@@ -1573,6 +1719,7 @@ function initializeVenue() {
         event.preventDefault();
         if (!venueDrag.moving) {
             venueDrag.moving = true;
+            startDragScroll(event);
             const ghost = document.createElement('div');
             ghost.className = 'venue-drag-ghost';
             ghost.textContent = teams.find(team => team.id === venueDrag.id)?.name || '';
@@ -1582,6 +1729,7 @@ function initializeVenue() {
         const ghost = document.querySelector('.venue-drag-ghost');
         ghost.style.left = `${event.clientX + 14}px`;
         ghost.style.top = `${event.clientY - 18}px`;
+        updateDragScroll(event);
         highlightVenueTarget(document.elementFromPoint(event.clientX, event.clientY)?.closest('[data-venue-post]'));
     }, { passive: false });
     document.addEventListener('pointerup', event => {
@@ -1653,6 +1801,7 @@ document.addEventListener('keydown', e => {
     }
 });
 initializeVenue();
+initializeDragScrolling();
 refresh();
 
 function replaceBoard(board) {
@@ -1663,6 +1812,7 @@ function replaceBoard(board) {
     selectedVenue = board.venue || '';
     venueBoardPosts = board.venueBoardPosts || [...defaultVenueBoardPosts];
     pitSide = validPitSide(board.pitSide) ? board.pitSide : 'stage-left';
+    additionalVenueLocations = board.additionalVenueLocations || [];
     notes.value = savedNotes = board.notes;
     document.getElementById('form-error').hidden = true;
     refresh();
@@ -1703,13 +1853,13 @@ backupFile.addEventListener('change', async () => {
 
 document.getElementById('demo-board').addEventListener('click', () => {
     if ((teams.length || locations.length || notes.value || handoffLog.length) && !confirm('Replace this board with sample units?')) return;
-    replaceBoard(readBoard({ teams: sampleTeams, locations: [], notes: '', venue: selectedVenue, venueBoardPosts, pitSide }));
+    replaceBoard(readBoard({ teams: sampleTeams, locations: [], notes: '', venue: selectedVenue, venueBoardPosts, pitSide, additionalVenueLocations }));
     showToolMessage('Sample units loaded.');
 });
 
 document.getElementById('clear-board').addEventListener('click', () => {
     if (!confirm('Clear all units, custom posts, shift notes, and time stamp entries?')) return;
-    replaceBoard({ teams: [], locations: [], notes: '', handoffLog: [], venue: selectedVenue, venueBoardPosts: [...defaultVenueBoardPosts], pitSide });
+    replaceBoard({ teams: [], locations: [], notes: '', handoffLog: [], venue: selectedVenue, venueBoardPosts: [...defaultVenueBoardPosts], pitSide, additionalVenueLocations: [] });
     showToolMessage('Board cleared.');
 });
 

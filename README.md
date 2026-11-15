@@ -77,9 +77,13 @@ To choose a status directly, use its **Status** dropdown. For an accidental tap,
 
 Use the unit's **Post** dropdown in the roster. On a computer, you can also drag its card into another post section or Main Medical.
 
+Hold a dragged team near the top or bottom edge of the screen to scroll in that direction. Scrolling continues while you hold there and stops when you move away, drop, or cancel. A long **Units** list also scrolls near its own edges.
+
 A field-to-field move keeps the team's status, status timer, and meal-break record. End a meal break separately when the team returns.
 
 Choose **No post assigned** to remove a geographic assignment while keeping the unit on the board.
+
+**No post assigned** always stays below every other post section, including newly added or restored posts.
 
 ### Add or change post sections
 
@@ -105,6 +109,8 @@ Check the post after releasing a unit from Main Medical. If it needs a new assig
 ## Use the Bill Graham 3D view
 
 Select **Bill Graham Civic Auditorium** under **Venue**, then open **Venue 3D**. If no venue is selected, the tab shows **No view**.
+
+The default view shows the 1st, 2nd, and 4th floors at a larger size, with less empty space. All three floors fit inside the map area. Enabling additional locations makes room for those locations.
 
 ### Move a team on the map
 
@@ -144,14 +150,18 @@ The choice moves the Pit area and **all teams assigned to Pit** together. It kee
 | Control | What it does |
 | --- | --- |
 | **All** | Show all currently enabled floors. |
-| **B, 1, 2, 4** | Show only the selected level. B means Basement. |
-| **3rd floor** checkbox | Show or hide the third floor and its floor button. |
+| **1, 2, 4** | Show only the selected level. |
+| **Add additional location** | Open checkboxes for **Outside of Venue**, **Basement**, and **Third floor**. Each starts hidden. |
+| **Outside of Venue** | Show a separate drop box below the floors and an Outside of Venue post on the Dispatch board. Drag teams into either box. |
+| **Basement / Third floor** | Show the optional floor, its floor button (**B** or **3**), and its post sections on the Dispatch board. |
 | **Rotate arrows** | Turn the map view. |
-| **Reset** | Restore the default angle, show All, and hide the third floor. Your Pit side stays selected. |
+| **Reset** | Restore the default angle and show All. Your Pit side and additional locations stay selected. |
 | **Find a call sign** | Search the Units list. |
 | **All units / Not placed on map / On meal break** | Filter the Units list. |
 
 Filtering or rotating the view keeps assignments in place. A team assigned to a hidden floor is still assigned there. Show that floor to see its marker.
+
+Additional-location choices save with the board and backups. Unchecking a location hides it on the map and removes its empty board sections. Assigned teams stay in their existing posts, and the menu shows their count. Check the location again to see its markers. The Outside of Venue box stays visible when switching between floor filters while it is enabled.
 
 The **placed** count shows how many units have a mapped location out of all units. It includes teams on floors that are currently hidden. Long call signs may be shortened above a ball; the full call sign is available in the Units list and roster.
 
@@ -206,7 +216,7 @@ The two app views stay in sync within the open board. Separate devices, browsers
 2. Select **Download backup**.
 3. Keep the downloaded `.json` file for handoff or recovery.
 
-A backup includes units, statuses, posts, timer start times, meal breaks, custom posts, notes, activity, venue selection, and Pit side.
+A backup includes units, statuses, posts, timer start times, meal breaks, custom posts, notes, activity, venue selection, Pit side, and additional locations.
 
 ### Restore a backup
 
@@ -243,7 +253,7 @@ Both actions ask for confirmation. Download a backup first if you need the curre
 | --- | --- |
 | **No view** in Venue 3D | Select Bill Graham Civic Auditorium under Venue. |
 | A unit is **Not placed** | Choose a specific venue post in its Post dropdown. |
-| An assigned unit seems missing from the map | Check the floor filter, third-floor checkbox, and Units list. |
+| An assigned unit seems missing from the map | Check the floor filter, **Add additional location** checkboxes, and Units list. |
 | Level is lower than the field-unit count | Level includes only roaming field units outside Fixed posts and off meal break. |
 | A tap sends a unit to Main Medical | At Medical is part of the tap cycle. Use Undo for an accidental status change. |
 | A completed meal has no Start meal button | Each unit has one tracked meal break for that board. |
@@ -263,4 +273,4 @@ Deploy the repo to GitHub Pages, or open `Event_EMS_Dispatch_Board.html` directl
 
 ## Checks
 
-Run `node tests/venue-state.test.mjs` for the 47 state and event checks. These cover venue selection, both assignment directions, fixed-post grouping and availability, saved Pit-side selection, Pit, Table Service, street orientation, roaming on Grove, map status taps, drag suppression, unified Basement assignments and large groups, hidden floors, named ball markers, Main Medical transitions, meal breaks, Undo, legacy backups, escaping, and move event handlers using an in-memory DOM fixture. They do not replace visual or device testing in a real browser.
+Run `node tests/venue-state.test.mjs` for the 59 state and event checks. These cover venue selection, both assignment directions, fixed-post grouping and availability, saved Pit-side selection, Pit, Table Service, street orientation, roaming on Grove, map status taps, drag suppression, unified Basement assignments and large groups, optional locations and persistence, Outside of Venue drops and crowded groups, Unassigned ordering, page and list scrolling during native and pointer drags, the larger fitted three-floor layout, hidden floors, named ball markers, Main Medical transitions, meal breaks, Undo, legacy backups, escaping, and move event handlers using an in-memory DOM fixture. They do not replace visual or device testing in a real browser.

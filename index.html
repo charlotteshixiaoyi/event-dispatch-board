@@ -9,8 +9,8 @@
     <link rel="icon" href="./dispatch.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="./dispatch-192.png">
     <link rel="manifest" href="./manifest.webmanifest">
-    <link rel="stylesheet" href="./board.css?v=12">
-    <script src="./board.js?v=12" defer></script>
+    <link rel="stylesheet" href="./board.css?v=13">
+    <script src="./board.js?v=13" defer></script>
 </head>
 <body>
     <header class="masthead">
@@ -112,7 +112,14 @@
                     <div class="venue-map-toolbar">
                         <div id="venue-levels" class="venue-levels" role="group" aria-label="Show venue level"></div>
                         <label class="pit-side-control" for="map-pit-side">Pit<select id="map-pit-side" class="pit-side-select"><option value="stage-left">Stage left · Polk</option><option value="stage-right">Stage right · Larkin</option></select></label>
-                        <label class="third-floor-toggle"><input type="checkbox" id="venue-show-third"><span id="venue-third-label">3rd floor</span></label>
+                        <details class="additional-locations" id="venue-additional-locations">
+                            <summary>Add additional location</summary>
+                            <div class="additional-locations-menu" role="group" aria-label="Additional venue locations">
+                                <label><input type="checkbox" id="venue-show-outside"><span id="venue-outside-label">Outside of Venue</span></label>
+                                <label><input type="checkbox" id="venue-show-basement"><span id="venue-basement-label">Basement</span></label>
+                                <label><input type="checkbox" id="venue-show-third"><span id="venue-third-label">Third floor</span></label>
+                            </div>
+                        </details>
                         <div class="venue-camera" role="group" aria-label="3D view controls">
                             <button type="button" id="venue-rotate-left" title="Rotate left" aria-label="Rotate venue left">↶</button>
                             <button type="button" id="venue-rotate-right" title="Rotate right" aria-label="Rotate venue right">↷</button>

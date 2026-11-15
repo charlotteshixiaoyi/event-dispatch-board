@@ -248,8 +248,12 @@ body[data-venue="bill-graham"] .field-location:not(.venue-board-post) { grid-col
 .venue-levels { display: flex; gap: 2px; padding: 3px; background: #edf2ee; border-radius: 6px; }
 .venue-levels button { min-width: 30px; min-height: 32px; padding: 5px 8px; border: 0; border-radius: 4px; background: transparent; color: #5a6d61; font-size: .73rem; font-weight: 650; }
 .venue-levels button[aria-pressed="true"] { background: #fff; color: var(--ink); box-shadow: 0 1px 3px #17372712; }
-.third-floor-toggle { display: flex; align-items: center; gap: 4px; min-height: 36px; color: #68766e; font-size: .65rem; white-space: nowrap; cursor: pointer; }
-.third-floor-toggle input { accent-color: var(--teal); }
+.additional-locations { position: relative; z-index: 3; color: #52665a; font-size: .72rem; }
+.additional-locations summary { min-height: 36px; padding: 9px; border: 1px solid #dce4df; border-radius: 5px; background: #fff; cursor: pointer; }
+.additional-locations-menu { position: absolute; top: calc(100% + 5px); left: 0; min-width: 218px; padding: 6px; border: 1px solid #d4dfd8; border-radius: 7px; background: #fff; box-shadow: 0 6px 20px #17372720; }
+.additional-locations-menu label { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 6px 9px; white-space: nowrap; cursor: pointer; }
+.additional-locations-menu label:hover { background: #edf5ef; border-radius: 4px; }
+.additional-locations-menu input { width: 16px; height: 16px; accent-color: var(--teal); }
 .venue-camera { display: flex; gap: 3px; margin-left: auto; }
 .venue-camera button { min-width: 30px; min-height: 34px; border: 1px solid #dce4df; border-radius: 5px; padding: 5px 7px; background: #fff; color: var(--muted); font-size: 1rem; }
 .venue-camera button:last-child { font-size: .66rem; }
@@ -265,6 +269,7 @@ body[data-venue="bill-graham"] .field-location:not(.venue-board-post) { grid-col
 .venue-zone-surface { fill: #f7faf8; stroke: #e0e6e2; stroke-width: .8; cursor: pointer; }
 .venue-fixed-post .venue-zone-surface { fill: #e9ecee; stroke: #c9d0d4; }
 .venue-medical .venue-zone-surface { fill: #f0f6fc; stroke: #d0e0ef; }
+.venue-outside-area .venue-zone-surface { fill: #f1f6f2; stroke: #bacdbf; stroke-dasharray: 5 4; }
 .venue-side-label { fill: #8b9990; font-family: system-ui, sans-serif; font-size: 11px; font-weight: 550; letter-spacing: 1px; pointer-events: none; }
 .venue-medical-label { fill: #7292b4; font-size: 10px; letter-spacing: .2px; }
 .venue-canvas[data-selecting="true"] .venue-zone-surface:hover, .venue-destination.is-drop-target .venue-zone-surface { fill: #e0f0e7; stroke: #72ae8c; stroke-width: 2px; }
