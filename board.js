@@ -979,6 +979,10 @@ function renderVenueMap() {
     const atPost = id => teams.filter(team => venuePostForTeam(team)?.id === id)
         .sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true }));
     const rowHeight = 44;
+    const markerPadding = 10;
+    const edgeScale = Math.hypot(Math.cos(angle), .3 * Math.sin(angle));
+    // The normal floor already has room for a complete row along the Grove strip.
+    const baseFloorStretch = Math.max(0, (markerPadding * 2 * edgeScale / 48 - .3) * 220 / Math.cos(angle));
     const box = (x1, z1, x2, z2) => [[x1, z1], [x2, z1], [x2, z2], [x1, z2]];
     const outer = box(-270, -110, 270, 110);
     const shapesForLevel = level => {
@@ -1002,34 +1006,60 @@ function renderVenueMap() {
     const packPost = shape => {
         const members = atPost(shape.id);
         const post = shape.id === 'clinic-zone' ? mainMedicalPost : venuePosts.find(post => post.id === shape.id);
-        const maxColumns = post.side === 'Basement' ? 5 : post.fixed ? 2 : post.roaming || post.side === 'Grove' ? 3 : 2;
-        const cols = Math.min(maxColumns, Math.max(1, Math.ceil(Math.sqrt(members.length))));
-        const rows = Math.max(1, Math.ceil(members.length / cols));
         const [minX, minZ] = shape.coords[0];
         const [maxX, maxZ] = shape.coords[2];
         const paddingX = Math.max(18, 12 * Math.hypot(Math.sin(angle), .3 * Math.cos(angle)) / .3);
-        const spacingX = (maxX - minX - paddingX * 2) / Math.max(1, cols - 1);
-        const stagger = cols > 1 && spacingX * Math.cos(angle) < 64 ? 20 : 0;
-        // Reserve depth for complete rows inside the destination, including its angled edges.
         const depth = maxZ - minZ;
-        const neededDepth = 32 + (rows - 1) * rowHeight + (cols - 1) * stagger;
-        const stretch = members.length > 1 ? Math.max(0, (neededDepth - depth * .3 * Math.cos(angle)) * 220 / depth) : 0;
-        const labelWidth = cols > 1 ? Math.max(36, Math.min(96, spacingX * Math.cos(angle) - 6)) : 96;
-        return { shape, members, post, cols, rows, minX, minZ, maxX, maxZ, spacingX, stagger, stretch, labelWidth, front: minZ >= 62 };
+        const usableWidth = maxX - minX - paddingX * 2;
+        const maxColumns = Math.min(Math.max(1, members.length), Math.max(1, Math.floor(usableWidth * Math.cos(angle) / 28) + 1));
+        let best;
+        // Try the available columns before requesting more space for the post.
+        for (let cols = 1; cols <= maxColumns; cols++) {
+            const rows = Math.max(1, Math.ceil(members.length / cols));
+            const spacingX = usableWidth / Math.max(1, cols - 1);
+            const stagger = cols > 1 && spacingX * Math.cos(angle) < 60 ? 20 : 0;
+            const offset = ((rows - 1) * rowHeight + (cols - 1) * stagger) / 2;
+            // Solve for the depth that keeps the outer balls inside the angled edges.
+            const a = depth / 2 * Math.cos(angle);
+            const b = depth / 2 * .3 * Math.sin(angle) ** 2 - offset * Math.cos(angle) - markerPadding * edgeScale;
+            const c = -offset * .3 * Math.sin(angle) ** 2;
+            const depthScale = (-b + Math.sqrt(b * b - 4 * a * c)) / (2 * a);
+            const stretch = Math.max(0, (depthScale - .3 * Math.cos(angle)) * 220);
+            const labelWidth = cols > 1 ? Math.max(36, Math.min(96, spacingX * Math.cos(angle) - 6)) : 96;
+            if (!best || stretch <= best.stretch + .001) best = { cols, rows, spacingX, stagger, stretch, labelWidth };
+        }
+        return { shape, members, post, minX, minZ, maxX, maxZ, ...best, front: minZ >= 62 };
+    };
+    const markerSpots = (packing, floorStretch, frontStretch) => {
+        const { shape, members, cols, rows, minX, minZ, maxX, maxZ, spacingX, stagger, front } = packing;
+        const depthScale = .3 * Math.cos(angle) + floorStretch / 220 + (front ? frontStretch / 48 : 0);
+        return members.map((team, slot) => {
+            if (members.length === 1) return [shape.x, shape.z];
+            const row = Math.floor(slot / cols);
+            const rowSize = Math.min(cols, members.length - row * cols);
+            const column = slot % cols - (rowSize - 1) / 2;
+            return [(minX + maxX) / 2 + column * spacingX,
+                (minZ + maxZ) / 2 + ((row - (rows - 1) / 2) * rowHeight + column * stagger) / depthScale];
+        });
     };
     let cursor = threeFloorView ? 4 : 12;
     const layout = floors.map(level => {
         const posts = shapesForLevel(level).map(packPost);
-        const roamingStretch = Math.max(0, Math.ceil(atPost(`venue-${level.id}-roaming`).length / 3) - 1) * rowHeight;
-        const roamingPadding = atPost(`venue-${level.id}-roaming`).length ? 28 + roamingStretch / 4 : 0;
-        const basementStretch = level.id === 'b' ? Math.max(0, Math.ceil(atPost('venue-b-basement').length / 5) - 1) * rowHeight : 0;
-        const floorStretch = Math.max(roamingStretch + roamingPadding, basementStretch, ...posts.filter(post => !post.front).map(post => post.stretch));
+        const floorStretch = Math.max(baseFloorStretch, ...posts.filter(post => !post.front).map(post => post.stretch));
         // A busy Grove strip grows at the front without stretching the entire auditorium.
-        const frontStretch = Math.max(0, ...posts.filter(post => post.front).map(post => (post.stretch - floorStretch) * (post.maxZ - post.minZ) / 220));
-        const band = Math.max((threeFloorView ? slabDepth * 2 + 24 : 154) + floorStretch + frontStretch,
+        const frontStretch = Math.max(0, ...posts.filter(post => post.front)
+            .map(post => post.stretch > floorStretch + .001 ? (post.stretch - floorStretch) * (post.maxZ - post.minZ) / 220 : 0));
+        const band = Math.max((threeFloorView ? slabDepth * 2 + 20 : 154) + floorStretch + frontStretch,
             (threeFloorView ? 90 : 110) + Math.max(0, ...posts.map(post => post.rows)) * rowHeight);
-        const item = { level, y: cursor + (threeFloorView ? slabDepth + 12 : 80), band, floorStretch, frontStretch, posts };
-        cursor += band;
+        let y = cursor + (threeFloorView ? slabDepth + 12 : 80);
+        const top = Math.min(Infinity, ...posts.flatMap(post => markerSpots(post, floorStretch, frontStretch)
+            .map(([x, z]) => y + (x * Math.sin(angle) + z * Math.cos(angle)) * .3
+                + floorStretch * (z + 110) / 220 + frontStretch * Math.max(0, (z - 62) / 48)
+                - (post.shape.id === 'clinic-zone' || post.shape.side === 'Pit' ? 49 : 28))));
+        const topPadding = Math.max(0, -top);
+        y += topPadding;
+        const item = { level, y, band, floorStretch, frontStretch, posts };
+        cursor += band + topPadding;
         return item;
     });
     const outsideMembers = atPost('venue-outside');
@@ -1101,19 +1131,11 @@ function renderVenueMap() {
             drawing += `<g class="${cls}" data-venue-post="${shape.id}" data-venue-side="${shape.side}"><polygon points="${points(splitShape(shape.coords), y, 0, floorStretch, frontStretch)}" class="venue-zone-surface" tabindex="0" role="button" aria-label="${escapeHTML(post.name)}${post.fixed ? `, fixed post, ${escapeHTML(description)}` : ''}, ${members.length} units"/></g>`;
             return { ...packing, cx, cy };
         });
-        for (const { shape, members, cx, cy, post, cols, rows, minX, minZ, maxX, maxZ, spacingX, stagger, labelWidth, front } of zoneData) {
+        for (const packing of zoneData) {
+            const { shape, members, cx, cy, post, labelWidth } = packing;
             // Marker groups retain their destination for drag hit testing and keyboard moves.
             drawing += `<g class="venue-team-layer" data-venue-post="${shape.id}">`;
-            const positions = members.map((team, slot) => {
-                if (members.length === 1) return [cx, cy];
-                const row = Math.floor(slot / cols);
-                const rowSize = Math.min(cols, members.length - row * cols);
-                const column = slot % cols - (rowSize - 1) / 2;
-                const x = (minX + maxX) / 2 + column * spacingX;
-                const depthScale = .3 * Math.cos(angle) + floorStretch / 220 + (front ? frontStretch / 48 : 0);
-                const z = (minZ + maxZ) / 2 + ((row - (rows - 1) / 2) * rowHeight + column * stagger) / depthScale;
-                return floorPoint(x, z);
-            });
+            const positions = markerSpots(packing, floorStretch, frontStretch).map(([x, z]) => floorPoint(x, z));
             const above = shape.id === 'clinic-zone' || shape.side === 'Pit';
             const labelY = members.length ? (above ? Math.min(...positions.map(point => point[1])) - 37 : Math.max(...positions.map(point => point[1])) + 25)
                 : cy + (above ? -37 : 4);

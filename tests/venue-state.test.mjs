@@ -892,6 +892,35 @@ function assertPackedPost(id,count){
  for(let i=0;i<balls.length;i++)for(let j=0;j<i;j++)assert.ok(Math.hypot(balls[i][0]-balls[j][0],balls[i][1]-balls[j][1])>=25.8,`${id}: selection rings must not overlap`);
  return balls;
 }
+test('Grove fills a row of three without expanding or bending the floor',()=>{
+ for(const angle of [-30,-18,-6,0,6,18,30,42]){
+  const show=count=>run(`replaceBoard(readBoard({teams:Array.from({length:${count}},(_,i)=>({id:'tfill'+i,name:'FILL-'+i,status:'roaming',location:'venue-1-grove'})),locations:[],venue:'bill-graham'}));venueAngle=${angle};venueFloor='1';setView('venue');renderVenue()`);
+  const surface=()=>document.querySelector('.venue-destination[data-venue-post="venue-1-grove"] polygon').getAttribute('points');
+  const slab=()=>document.querySelector('.venue-floor[data-floor="1"] .venue-slab').getAttribute('points');
+  show(0);
+  const emptySurface=surface(),emptySlab=slab();
+  for(const count of [1,2,3]){
+   show(count);
+   assert.equal(surface(),emptySurface,`${count} Grove teams must use the existing post at ${angle} degrees`);
+   assert.equal(slab(),emptySlab,`${count} Grove teams must leave the floor straight at ${angle} degrees`);
+   if(count>1)assertPackedPost('venue-1-grove',count);
+  }
+  show(9);
+  assert.notEqual(surface(),emptySurface,'a full Grove post must still grow when needed');
+  assertPackedPost('venue-1-grove',9);
+ }
+ run("venueFloor='all';venueAngle=18;renderVenue()");
+});
+test('wider posts use their available columns before adding rows or growing',()=>{
+ for(const [post,count] of [['venue-2-grove',5],['venue-2-roaming',5],['venue-b-basement',8]]){
+  const show=length=>run(`replaceBoard(readBoard({teams:Array.from({length:${length}},(_,i)=>({id:'twidth'+i,name:'WIDTH-'+i,status:'roaming',location:'${post}'})),locations:[],venue:'bill-graham',additionalVenueLocations:['b']}));venueAngle=18;venueFloor='${post.split('-')[1]}';setView('venue');renderVenue()`);
+  const surface=()=>document.querySelector(`.venue-destination[data-venue-post="${post}"] polygon`).getAttribute('points');
+  show(0);const empty=surface();
+  show(count);assert.equal(surface(),empty,`${post} must fill its existing width before growing`);
+  assertPackedPost(post,count);
+ }
+ run("venueFloor='all';venueAngle=18;renderVenue()");
+});
 test('crowded map posts use several spots and keep every ball inside the post while rotating',()=>{
  for(const [post,count] of [['venue-2-polk',4],['venue-2-larkin',5],['venue-1-grove',9],['venue-1-roaming',8],['venue-2-roaming',8],['clinic-zone',8],['venue-4-polk',6],['venue-1-pit',4],['venue-1-table-service',4],['venue-b-basement',80]]){
   run(`replaceBoard(readBoard({teams:Array.from({length:${count}},(_,i)=>({id:'tpack'+i,name:'PACK-'+i,status:'${post==='clinic-zone'?'atclinic':'roaming'}',location:'${post}'})),locations:[],venue:'bill-graham',additionalVenueLocations:${post==='venue-b-basement'?"['b']":"[]"}}));setView('venue')`);
