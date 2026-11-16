@@ -872,4 +872,57 @@ test('older saved on-scene units and activity entries use On call and both call 
  el('tlegacy').click();document.querySelector('[data-call-status="transporting"]').click();
  assert.equal(state().teams[0].status,'transporting');
 });
+function assertPackedPost(id,count){
+ const group=document.querySelector(`.venue-team-layer[data-venue-post="${id}"]`);
+ const polygon=document.querySelector(`.venue-destination[data-venue-post="${id}"] polygon`).getAttribute('points').split(' ').map(pair=>pair.split(',').map(Number));
+ const balls=group.querySelectorAll('.venue-unit-ball').map(ball=>[Number(ball.getAttribute('cx')),Number(ball.getAttribute('cy'))]);
+ assert.equal(balls.length,count);
+ assert.ok(new Set(balls.map(point=>point[0].toFixed(2))).size>1,`${id} must use several horizontal spots`);
+ for(const point of balls){
+  let inside=false;
+  for(let i=0,j=polygon.length-1;i<polygon.length;j=i++){
+   const a=polygon[i],b=polygon[j];
+   if((a[1]>point[1])!==(b[1]>point[1])&&point[0]<(b[0]-a[0])*(point[1]-a[1])/(b[1]-a[1])+a[0])inside=!inside;
+   const dx=b[0]-a[0],dy=b[1]-a[1];
+   const t=Math.max(0,Math.min(1,((point[0]-a[0])*dx+(point[1]-a[1])*dy)/(dx*dx+dy*dy)));
+   assert.ok(Math.hypot(point[0]-a[0]-t*dx,point[1]-a[1]-t*dy)>=7.8,`${id}: complete ball must fit inside its destination`);
+  }
+  assert.ok(inside,`${id}: marker must stay in its assigned post`);
+ }
+ for(let i=0;i<balls.length;i++)for(let j=0;j<i;j++)assert.ok(Math.hypot(balls[i][0]-balls[j][0],balls[i][1]-balls[j][1])>=25.8,`${id}: selection rings must not overlap`);
+ return balls;
+}
+test('crowded map posts use several spots and keep every ball inside the post while rotating',()=>{
+ for(const [post,count] of [['venue-2-polk',4],['venue-2-larkin',5],['venue-1-grove',9],['venue-1-roaming',8],['venue-2-roaming',8],['clinic-zone',8],['venue-4-polk',6],['venue-1-pit',4],['venue-1-table-service',4],['venue-b-basement',80]]){
+  run(`replaceBoard(readBoard({teams:Array.from({length:${count}},(_,i)=>({id:'tpack'+i,name:'PACK-'+i,status:'${post==='clinic-zone'?'atclinic':'roaming'}',location:'${post}'})),locations:[],venue:'bill-graham',additionalVenueLocations:${post==='venue-b-basement'?"['b']":"[]"}}));setView('venue')`);
+  const before=state();
+  for(const angle of [-30,0,18,42]){
+   run(`venueAngle=${angle};renderVenue()`);
+   assertPackedPost(post,count);
+   assert.deepEqual(state(),before);
+  }
+ }
+});
+test('neighboring crowded posts remain on their surfaces and inside the map viewport',()=>{
+ const groups=[['venue-1-grove',9],['venue-1-pit',3],['venue-1-polk',4],['venue-1-larkin',3],['venue-1-roaming',5],['clinic-zone',4],['venue-4-polk',3],['venue-4-grove',6]];
+ const fixture={teams:groups.flatMap(([location,count],group)=>Array.from({length:count},(_,i)=>({id:`tneighbor${group}_${i}`,name:`GROUP-${group}-${i}`,status:location==='clinic-zone'?'atclinic':'roaming',location}))),locations:[],venue:'bill-graham'};
+ run(`replaceBoard(readBoard(${JSON.stringify(fixture)}));setView('venue')`);
+ for(const angle of [-30,0,18,42]){
+  run(`venueAngle=${angle};renderVenue()`);
+  const box=el('venue-canvas').querySelector('svg').getAttribute('viewBox').split(' ').map(Number);
+  for(const [post,count] of groups)assertPackedPost(post,count);
+  for(const polygon of document.querySelectorAll('.venue-slab'))for(const [x,y] of polygon.getAttribute('points').split(' ').map(pair=>pair.split(',').map(Number)))assert.ok(x>=0&&x<=box[2]&&y>=0&&y<=box[3]);
+  for(const label of document.querySelectorAll('.venue-marker-name'))assert.ok(Number(label.getAttribute('y'))>=12&&Number(label.getAttribute('y'))<=box[3]-2);
+ }
+});
+test('automatic map spots remain stable through status changes, moves, Undo and backup restore',()=>{
+ run("replaceBoard(readBoard({teams:Array.from({length:4},(_,i)=>({id:'tstable'+i,name:'STABLE-'+i,status:'roaming',location:'venue-2-polk'})),locations:[],venue:'bill-graham'}));venueAngle=18;setView('venue')");
+ const positions=()=>document.querySelectorAll('.venue-map-unit').map(marker=>[marker.dataset.mapTeam,marker.querySelector('.venue-unit-ball').getAttribute('cx'),marker.querySelector('.venue-unit-ball').getAttribute('cy')]);
+ const before=state(),spots=positions();
+ run("updateStatus('tstable0','onscene')");assert.deepEqual(positions(),spots);
+ run('undoChange()');assert.deepEqual(state(),before);
+ run("moveTeam('tstable0','venue-2-larkin')");assert.equal(state().teams[0].location,'venue-2-larkin');assertPackedPost('venue-2-polk',3);
+ run('undoChange()');assert.deepEqual(state(),before);assert.deepEqual(positions(),spots);
+ run('replaceBoard(readBoard(JSON.parse(serializeBoard())))');assert.deepEqual(state(),before);assert.deepEqual(positions(),spots);
+});
 console.log(`${passed} checks passed.`);

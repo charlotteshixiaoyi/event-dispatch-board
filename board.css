@@ -93,7 +93,7 @@ h2 { font-size: 1rem; font-weight: 700; letter-spacing: -.025em; }
 .field-locations { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .field-location { min-width: 0; padding: 10px; background: var(--soft-surface); border-radius: 8px; }
 .field-location[data-location="pit-table-service"], .field-location[data-location="unassigned"] { grid-column: 1 / -1; }
-.field-location .badge-grid { gap: clamp(2px, calc(12px / var(--unit-count, 1)), 6px); }
+.field-location .badge-grid { --unit-gap: clamp(2px, calc(12px / var(--unit-count, 1)), 6px); }
 .field-location .team-badge { min-height: 82px; padding: clamp(4px, calc(24px / var(--unit-count, 1)), 10px); gap: 3px; }
 .field-location .team-name { font-size: clamp(.75rem, 20cqi, 1.1rem); }
 .location-header { display: flex; align-items: center; gap: 8px; min-height: 28px; margin-bottom: 8px; }
@@ -102,7 +102,7 @@ h2 { font-size: 1rem; font-weight: 700; letter-spacing: -.025em; }
 .location-header input:hover, .location-header input:focus { background: #fff; border-color: var(--line); }
 .location-count { color: var(--muted); font-size: .71rem; white-space: nowrap; }
 .zone-container.drag-over, .field-location.drag-over { background: #e9f7ef; outline: 2px solid var(--teal); outline-offset: -2px; }
-.badge-grid { display: grid; grid-template-columns: repeat(var(--unit-count, 1), minmax(min(68px, 100%), 1fr)); align-content: start; gap: clamp(2px, calc(12px / var(--unit-count, 1)), 8px); min-width: 0; overflow-x: auto; scrollbar-width: thin; }
+.badge-grid { --unit-gap: clamp(2px, calc(12px / var(--unit-count, 1)), 8px); display: grid; grid-template-columns: repeat(var(--unit-count, 1), minmax(min(68px, 100%), 1fr)); align-content: start; gap: var(--unit-gap); width: 100%; max-width: calc(var(--unit-count, 1) * 132px + (var(--unit-count, 1) - 1) * var(--unit-gap)); min-width: 0; overflow-x: auto; scrollbar-width: thin; }
 .badge-grid:empty::after { content: 'No units'; grid-column: 1 / -1; padding: 12px 0; color: var(--muted); font-size: .8rem; }
 .team-badge, .status-select { --badge-bg: #e2f3e9; --badge-text: #145c3e; --badge-line: #218052; }
 :is(.team-badge, .status-select)[data-status="onscene"] { --badge-bg: #fce8ec; --badge-text: #a1273c; --badge-line: #c73551; }
@@ -302,6 +302,7 @@ h2 { font-size: 1rem; font-weight: 700; letter-spacing: -.025em; }
 .venue-map-unit.is-selected .venue-selection-ring, .venue-map-unit:focus-visible .venue-selection-ring, .venue-map-unit:hover .venue-selection-ring { opacity: 1; }
 .venue-map-unit:focus-visible { outline: 0; }
 .venue-marker-name { fill: #203c2c; font-family: system-ui, sans-serif; font-size: 16px; font-weight: 750; paint-order: stroke; stroke: #fff; stroke-width: 3px; stroke-linejoin: round; }
+.venue-map-unit[data-crowded] .venue-marker-name { font-size: 12px; }
 .venue-map-footer { padding: 8px 12px; border-top: 1px solid #edf1ee; flex-shrink: 0; }
 .venue-legend { display: flex; flex-wrap: wrap; gap: 6px 12px; }
 .venue-legend span { display: inline-flex; align-items: center; gap: 5px; color: #79877d; font-size: .61rem; }
