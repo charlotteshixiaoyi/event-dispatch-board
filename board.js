@@ -627,6 +627,9 @@ function renderBoard() {
         });
         details.appendChild(row);
     });
+    for (const grid of [clinic, ...grids.values()]) {
+        grid.style.setProperty('--unit-count', Math.max(1, grid.children.length));
+    }
     renderMealBreaks(sortedTeams);
     renderTimestamps();
     const fieldCount = teams.filter(t => t.zone === 'field-zone').length;
