@@ -111,6 +111,17 @@ h2 { font-size: 1rem; font-weight: 700; letter-spacing: -.025em; }
 .team-badge.dragging { opacity: .45; }
 .team-name { font-size: 1.2rem; font-weight: 750; line-height: 1.15; letter-spacing: -.03em; }
 .team-status { font-size: .75rem; font-weight: 650; }
+.call-actions { position: fixed; z-index: 30; width: 276px; max-width: calc(100vw - 16px); padding: 10px; border: 1px solid #c8d7cd; border-radius: 10px; background: #fff; box-shadow: 0 6px 24px #17372730; }
+.call-actions::after { content: ''; position: absolute; top: 100%; left: var(--call-arrow-left, 50%); width: 12px; height: 12px; border-right: 1px solid #c8d7cd; border-bottom: 1px solid #c8d7cd; background: #fff; transform: translate(-50%, -5px) rotate(45deg); }
+.call-actions-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 8px; font-size: .8rem; }
+.call-actions-heading strong { min-width: 0; overflow-wrap: anywhere; }
+.call-actions-heading > span { flex-shrink: 0; color: #a1273c; font-size: .7rem; }
+.call-actions-options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.call-actions-options button { min-height: 52px; border: 1px solid #b7d9c5; border-radius: 6px; padding: 8px 6px; background: #e2f3e9; color: #145c3e; text-align: center; touch-action: manipulation; }
+.call-actions-options button[data-call-status="transporting"] { border-color: #e3c98c; background: #fbefda; color: #805008; }
+.call-actions-options button:hover { filter: brightness(.96); }
+.call-actions-options strong { display: block; font-size: .78rem; }
+.call-actions-options span { display: block; margin-top: 2px; font-size: .68rem; }
 .team-timer { font-size: .73rem; }
 .meal-break-flag { display: block; font-size: .72rem; font-weight: 650; }
 .meal-break-list { list-style: none; padding: 0; margin: 0; }
@@ -269,7 +280,8 @@ body[data-venue="bill-graham"] .field-location:not(.venue-board-post) { grid-col
 .venue-zone-surface { fill: #f7faf8; stroke: #e0e6e2; stroke-width: .8; cursor: pointer; }
 .venue-fixed-post .venue-zone-surface { fill: #e9ecee; stroke: #c9d0d4; }
 .venue-medical .venue-zone-surface { fill: #f0f6fc; stroke: #d0e0ef; }
-.venue-outside-area .venue-zone-surface { fill: #f1f6f2; stroke: #bacdbf; stroke-dasharray: 5 4; }
+.venue-roaming .venue-zone-surface { fill: transparent; stroke: transparent; }
+.venue-outside-area .venue-zone-surface { fill: #f1f6f2; stroke: #bacdbf; }
 .venue-side-label { fill: #8b9990; font-family: system-ui, sans-serif; font-size: 11px; font-weight: 550; letter-spacing: 1px; pointer-events: none; }
 .venue-medical-label { fill: #7292b4; font-size: 10px; letter-spacing: .2px; }
 .venue-canvas[data-selecting="true"] .venue-zone-surface:hover, .venue-destination.is-drop-target .venue-zone-surface { fill: #e0f0e7; stroke: #72ae8c; stroke-width: 2px; }

@@ -9,8 +9,8 @@
     <link rel="icon" href="./dispatch.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="./dispatch-192.png">
     <link rel="manifest" href="./manifest.webmanifest">
-    <link rel="stylesheet" href="./board.css?v=13">
-    <script src="./board.js?v=13" defer></script>
+    <link rel="stylesheet" href="./board.css?v=15">
+    <script src="./board.js?v=15" defer></script>
 </head>
 <body>
     <header class="masthead">
@@ -42,9 +42,9 @@
                 <span class="metric-label">Level</span><strong class="metric-value" id="level-number" data-level-value>0</strong>
                 <span class="metric-caption">Available</span>
             </div>
-            <div class="metric onscene"><span class="metric-label">On scene</span><strong class="metric-value" id="onscene-total">0</strong></div>
+            <div class="metric onscene"><span class="metric-label">On call</span><strong class="metric-value" id="onscene-total">0</strong></div>
             <div class="metric transporting"><span class="metric-label">Transporting</span><strong class="metric-value" id="transporting-total">0</strong></div>
-            <div class="metric atclinic"><span class="metric-label">At Medical</span><strong class="metric-value" id="atclinic-total">0</strong></div>
+            <div class="metric atclinic"><span class="metric-label">At Main Medical</span><strong class="metric-value" id="atclinic-total">0</strong></div>
         </section>
         <div class="action-bar">
             <form class="controls" id="team-form">
@@ -130,7 +130,7 @@
                     </div>
                     <div id="venue-canvas" class="venue-canvas"></div>
                     <div class="venue-map-footer">
-                        <div class="venue-legend" aria-label="Unit markers"><span data-status="roaming">Roaming</span><span data-status="onscene">On scene</span><span data-status="transporting">Transporting</span><span data-status="atclinic">At Medical</span><span data-status="fixed">Fixed post</span><span data-status="meal">Meal break</span></div>
+                        <div class="venue-legend" aria-label="Unit markers"><span data-status="roaming">Roaming</span><span data-status="onscene">On call</span><span data-status="transporting">Transporting</span><span data-status="atclinic">At Main Medical</span><span data-status="fixed">Fixed post</span><span data-status="meal">Meal break</span></div>
                     </div>
                 </div>
                 <aside class="venue-sidebar" aria-label="Move venue units">
@@ -198,5 +198,12 @@
         </details>
         <footer class="app-footer"><p>Created by Charlotte Shi, EMT-B</p></footer>
     </main>
+    <div id="call-actions" class="call-actions" role="dialog" aria-label="On call actions" hidden>
+        <p class="call-actions-heading"><strong id="call-actions-name"></strong><span>On call</span></p>
+        <div class="call-actions-options">
+            <button type="button" data-call-status="roaming"><strong>Clear call</strong><span>Roaming</span></button>
+            <button type="button" data-call-status="transporting"><strong>Start transport</strong><span>Transporting</span></button>
+        </div>
+    </div>
 </body>
 </html>

@@ -17,7 +17,7 @@ class Text {
 export class Element {
  constructor(tag, doc) {
   this.tagName=tag.toLowerCase(); this.ownerDocument=doc; this.attributes={}; this.children=[]; this.parentElement=null;
-  this.listeners={}; this.style={}; this.classList=new Classes(this);
+  this.listeners={}; this.style={setProperty(name,value){this[name]=String(value);}}; this.classList=new Classes(this);
   this.dataset=new Proxy({}, {get:(_,key)=>this.getAttribute(attrName(key))??undefined,set:(_,key,value)=>{this.setAttribute(attrName(key),value);return true;}});
  }
  setAttribute(name,value) { this.attributes[name]=String(value); }
@@ -40,6 +40,8 @@ export class Element {
  fire(type,init={}){const event={type,target:this,currentTarget:this,detail:1,preventDefault(){this.defaultPrevented=true;},stopPropagation(){this.stopped=true;},...init};for(let el=this;el;el=el.parentElement){event.currentTarget=el;for(const fn of el.listeners?.[type]||[])fn(event);if(event.stopped)break;}return event;}
  click(){this.fire('click');}
  focus(){this.ownerDocument.activeElement=this;}
+ getBoundingClientRect(){return {left:100,top:200,right:200,bottom:240,width:100,height:40};}
+ scrollIntoView(){}
  blur(){}
  contains(other){for(let n=other;n;n=n.parentElement)if(n===this)return true;return false;}
  closest(selector){for(let n=this;n;n=n.parentElement)if(matches(n,selector))return n;return null;}

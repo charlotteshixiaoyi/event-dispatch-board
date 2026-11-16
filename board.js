@@ -1,6 +1,6 @@
 const storageKey = 'charlotte-dispatch-board-v1';
 const mealBreakDuration = 30 * 60 * 1000;
-const statusNames = { roaming: 'Roaming', onscene: 'On scene', transporting: 'Transporting', atclinic: 'At Medical' };
+const statusNames = { roaming: 'Roaming', onscene: 'On call', transporting: 'Transporting', atclinic: 'At Main Medical' };
 const builtInLocations = [{ id: 'pit-table-service', name: 'Fixed posts' }, { id: 'unassigned', name: 'No post assigned' }];
 const venueLevels = [
     { id: 'b', name: 'Basement', short: 'B', detail: 'Service level' },
@@ -25,8 +25,8 @@ const venuePosts = [
     ...venueLevels.filter(level => level.id !== 'b').flatMap(level => venueSides.map(side => ({
         id: `venue-${level.id}-${side.toLowerCase()}`, name: `${level.name} ${side}`, level: level.id, side
     }))),
-    { id: 'venue-1-roaming', name: '1st roaming', level: '1', side: 'Grove', roaming: true },
-    { id: 'venue-2-roaming', name: '2nd roaming', level: '2', side: 'Grove', roaming: true },
+    { id: 'venue-1-roaming', name: '1st roaming', level: '1', side: 'Roaming', roaming: true },
+    { id: 'venue-2-roaming', name: '2nd roaming', level: '2', side: 'Roaming', roaming: true },
     { id: 'venue-1-pit', name: 'Pit', level: '1', side: 'Pit', fixed: true },
     { id: 'venue-1-table-service', name: 'Table Service', level: '1', side: 'Grove', fixed: true, mapDescription: '1st floor Grove nearest Larkin' }
 ];
@@ -39,6 +39,8 @@ let additionalVenueLocations = [];
 const mainMedicalPost = { id: 'clinic-zone', name: 'Main Medical · 4th floor · Polk', level: '4', side: 'Polk' };
 let activeView = 'dispatch';
 let selectedVenueTeam = null;
+let callActionTeam = null;
+let callActionView = 'dispatch';
 let venueFloor = 'all';
 let venueAngle = 18;
 let venueDrag = null;
@@ -176,7 +178,7 @@ function readBoard(saved) {
     const handoffLog = Array.isArray(saved.handoffLog) ? saved.handoffLog.filter(entry =>
         entry && Number.isSafeInteger(entry.at) && entry.at > 0 && entry.at <= 8.64e15
         && typeof entry.team === 'string' && typeof entry.message === 'string'
-    ).map(({ at, team, message }) => ({ at, team, message })) : [];
+    ).map(({ at, team, message }) => ({ at, team, message: message.replace(/\bon scene\b/gi, 'On call') })) : [];
     const venue = saved.venue === 'bill-graham' ? 'bill-graham' : '';
     const venueBoardPosts = Array.isArray(saved.venueBoardPosts)
         ? [...new Set(saved.venueBoardPosts.map(canonicalLocation).filter(id => venuePosts.some(post => post.id === id && !post.fixed)))]
@@ -274,9 +276,93 @@ function updateTimers() {
     });
     updateMealBreakTimers(now);
 }
-function nextStatus(status) {
-    const order = Object.keys(statusNames);
-    return order[(order.indexOf(status) + 1) % order.length];
+function cycleTeamStatus(id, view = 'dispatch', focus = false) {
+    const team = teams.find(item => item.id === id);
+    if (!team) return;
+    if (team.status === 'onscene') {
+        if (view === 'venue') renderVenue();
+        showCallActions(id, view);
+        return;
+    }
+    const next = { roaming: 'onscene', transporting: 'atclinic', atclinic: 'roaming' };
+    updateStatus(id, next[team.status]);
+    if (focus) focusTeamStatus(id, view);
+}
+
+function focusTeamStatus(id, view) {
+    const target = view === 'venue'
+        ? document.querySelector(`[data-map-team="${id}"]`) || document.getElementById('venue-selected-status')
+        : document.getElementById(id);
+    target?.focus({ preventScroll: true });
+}
+function callActionAnchor() {
+    return callActionView === 'venue'
+        ? document.querySelector(`[data-map-team="${callActionTeam}"] .venue-unit-ball`)
+        : document.getElementById(callActionTeam);
+}
+function hideCallActions(focus = false) {
+    if (!callActionTeam) return;
+    const id = callActionTeam;
+    const view = callActionView;
+    const trigger = view === 'venue' ? document.querySelector(`[data-map-team="${id}"]`) : document.getElementById(id);
+    trigger?.setAttribute('aria-expanded', 'false');
+    callActionTeam = null;
+    document.getElementById('call-actions').hidden = true;
+    if (focus) focusTeamStatus(id, view);
+}
+function positionCallActions() {
+    if (!callActionTeam) return;
+    const anchor = callActionAnchor();
+    if (!anchor || activeView !== callActionView) { hideCallActions(); return; }
+    const popup = document.getElementById('call-actions');
+    const rect = anchor.getBoundingClientRect();
+    const size = popup.getBoundingClientRect();
+    const center = rect.left + rect.width / 2;
+    const left = Math.max(8, Math.min(center - size.width / 2, window.innerWidth - size.width - 8));
+    popup.style.left = `${left}px`;
+    popup.style.top = `${rect.top - size.height - 16}px`;
+    popup.style.setProperty('--call-arrow-left', `${Math.max(12, Math.min(size.width - 12, center - left))}px`);
+}
+function showCallActions(id, view) {
+    hideCallActions();
+    const team = teams.find(item => item.id === id);
+    if (!team || team.status !== 'onscene') return;
+    callActionTeam = id;
+    callActionView = view;
+    const popup = document.getElementById('call-actions');
+    popup.setAttribute('aria-label', `On call actions for ${team.name}`);
+    document.getElementById('call-actions-name').textContent = team.name;
+    const trigger = view === 'venue' ? document.querySelector(`[data-map-team="${id}"]`) : document.getElementById(id);
+    trigger?.setAttribute('aria-expanded', 'true');
+    popup.hidden = false;
+    const anchor = callActionAnchor();
+    if (!anchor) { hideCallActions(); return; }
+    const space = popup.getBoundingClientRect().height + 24;
+    if (anchor.getBoundingClientRect().top < space) anchor.scrollIntoView({ block: 'center', behavior: 'instant' });
+    positionCallActions();
+    popup.querySelector('button').focus({ preventScroll: true });
+}
+function initializeCallActions() {
+    const popup = document.getElementById('call-actions');
+    popup.addEventListener('click', event => {
+        const button = event.target.closest('[data-call-status]');
+        const id = callActionTeam;
+        const view = callActionView;
+        if (!button || !id || !teams.some(team => team.id === id && team.status === 'onscene')) return;
+        updateStatus(id, button.dataset.callStatus);
+        if (view === 'venue') venueMessage(`${teams.find(team => team.id === id).name}: ${statusNames[button.dataset.callStatus]}.`);
+        focusTeamStatus(id, view);
+    });
+    const dismissOutside = event => {
+        if (!callActionTeam || popup.contains(event.target)) return;
+        const triggerId = callActionView === 'venue'
+            ? event.target.closest('[data-map-team]')?.dataset.mapTeam : event.target.closest('.team-badge')?.id;
+        if (triggerId !== callActionTeam) hideCallActions();
+    };
+    document.addEventListener('pointerdown', dismissOutside);
+    document.addEventListener('click', dismissOutside);
+    window.addEventListener('scroll', positionCallActions, true);
+    window.addEventListener('resize', positionCallActions);
 }
 
 function isOnMealBreak(team) {
@@ -498,12 +584,15 @@ function renderBoard() {
         if (isFixedPost(team)) badge.dataset.fixedPost = 'true';
         if (onBreak) badge.dataset.mealBreak = 'true';
         badge.draggable = true; badge.id = team.id;
+        if (team.status === 'onscene') {
+            badge.setAttribute('aria-haspopup', 'dialog');
+            badge.setAttribute('aria-expanded', 'false');
+        }
         setBadgeLabel(badge, team);
         badge.innerHTML = `<span class="team-name">${escapeHTML(team.name)}</span><span class="team-status">${statusNames[team.status]}</span><span class="team-timer" data-since="${team.statusSince}" aria-hidden="true">${elapsedStatus(team.statusSince)}</span>${mealBreakFlag}`;
         badge.addEventListener('click', e => {
             if (Date.now() - lastDragEnd < 300) return;
-            updateStatus(team.id, nextStatus(team.status));
-            if (e.detail === 0) document.getElementById(team.id)?.focus({ preventScroll: true });
+            cycleTeamStatus(team.id, 'dispatch', e.detail === 0);
         });
         badge.addEventListener('dragstart', dragStart);
         badge.addEventListener('dragend', () => {
@@ -555,7 +644,7 @@ function renderBoard() {
     document.getElementById('clinic-count').textContent = `${clinicCount} unit${clinicCount !== 1 ? 's' : ''}`;
     document.getElementById('undo-button').disabled = undoHistory.length === 0;
 }
-function refresh() { renderBoard(); renderVenue(); saveBoard(); }
+function refresh() { hideCallActions(); renderBoard(); renderVenue(); saveBoard(); }
 function addTeam() {
     const input = document.getElementById('newTeamInput');
     const name = input.value.trim();
@@ -676,6 +765,7 @@ function applyTeamMove(team, location, now = Date.now()) {
     recordTeamChange(team, previous, now);
 }
 function dragStart(e) {
+    hideCallActions();
     e.dataTransfer.setData('text/plain', e.currentTarget.id);
     e.dataTransfer.effectAllowed = 'move';
     e.currentTarget.classList.add('dragging');
@@ -766,6 +856,7 @@ function postOptions(team) {
 }
 
 function setView(view, focus = false) {
+    hideCallActions();
     activeView = view;
     document.body.classList[view === 'venue' ? 'add' : 'remove']('is-venue-view');
     for (const name of ['dispatch', 'venue']) {
@@ -796,10 +887,8 @@ function cycleVenueTeamStatus(id, focus = false) {
     const team = teams.find(item => item.id === id);
     if (!team) return;
     selectedVenueTeam = id;
-    updateStatus(id, nextStatus(team.status));
-    venueMessage(`${team.name}: ${statusNames[team.status]}.`);
-    if (focus) (document.querySelector(`[data-map-team="${id}"]`)
-        || document.getElementById('venue-selected-status')).focus({ preventScroll: true });
+    cycleTeamStatus(id, 'venue', focus);
+    venueMessage(callActionTeam === id ? `${team.name}: Choose Clear call or Start transport.` : `${team.name}: ${statusNames[team.status]}.`);
 }
 
 function moveVenueTeam(id, destination) {
@@ -873,6 +962,7 @@ function renderVenueInspector() {
 }
 
 function renderVenueMap() {
+    if (callActionView === 'venue') hideCallActions();
     if (selectedVenue !== 'bill-graham') return;
     const angle = venueAngle * Math.PI / 180;
     const visible = visibleVenueLevels();
@@ -887,6 +977,7 @@ function renderVenueMap() {
     const rowHeight = 44;
     const columns = (post, count) => post.side === 'Basement' ? Math.min(5, Math.max(1, count))
         : post.fixed ? Math.min(2, Math.max(1, count))
+        : post.roaming ? Math.min(3, Math.max(1, count))
         : post.side === 'Grove' && !['1', '2'].includes(post.level) ? Math.min(3, Math.max(1, count)) : 1;
     let cursor = threeFloorView ? 4 : 12;
     const layout = floors.map(level => {
@@ -895,9 +986,11 @@ function renderVenueMap() {
             return Math.ceil(count / columns(post, count));
         });
         if (level.id === '4') rowCounts.push(atPost('clinic-zone').length + atPost('venue-4-polk').length);
-        const band = Math.max(threeFloorView ? slabDepth * 2 + 24 : 154,
+        const roamingStretch = Math.max(0, Math.ceil(atPost(`venue-${level.id}-roaming`).length / 3) - 1) * rowHeight;
+        const roamingPadding = atPost(`venue-${level.id}-roaming`).length ? 28 + roamingStretch / 4 : 0;
+        const band = Math.max((threeFloorView ? slabDepth * 2 + 24 : 154) + roamingStretch + roamingPadding,
             (threeFloorView ? 90 : 110) + Math.max(0, ...rowCounts) * rowHeight);
-        const item = { level, y: cursor + (threeFloorView ? slabDepth + 12 : 80), band };
+        const item = { level, y: cursor + (threeFloorView ? slabDepth + 12 : 80), band, roamingStretch, roamingPadding };
         cursor += band;
         return item;
     });
@@ -905,8 +998,13 @@ function renderVenueMap() {
     const outsideVisible = additionalVenueLocations.includes('outside');
     const outsideColumns = Math.min(3, Math.max(1, outsideMembers.length));
     const outsideY = cursor + 10;
-    const outsideHeight = 58 + Math.max(1, Math.ceil(outsideMembers.length / outsideColumns)) * rowHeight;
-    const height = Math.max(focused ? 240 : 0, outsideVisible ? outsideY + outsideHeight + 12 : cursor + 12);
+    const outsideRows = Math.max(1, Math.ceil(outsideMembers.length / outsideColumns));
+    const outsideRx = 170;
+    const outsideHalfWidth = (outsideColumns - 1) * 44 + 24;
+    const outsideRy = Math.max(48, Math.ceil(((outsideRows - 1) * rowHeight / 2 + 30)
+        / Math.sqrt(1 - (outsideHalfWidth / outsideRx) ** 2)));
+    const outsideCenterY = outsideY + outsideRy;
+    const height = Math.max(focused ? 240 : 0, outsideVisible ? outsideY + outsideRy * 2 + 20 : cursor + 12);
     const project = (x, z, y, bottom = 0) => [mapCenter + x * Math.cos(angle) - z * Math.sin(angle), y + (x * Math.sin(angle) + z * Math.cos(angle)) * .3 + bottom];
     const points = (coords, y, bottom = 0, stretch = 0) => coords.map(([x, z]) => {
         const point = project(x, z, y, bottom);
@@ -924,15 +1022,15 @@ function renderVenueMap() {
     const teamMarker = (team, post, x, markerY) => {
         const label = team.name.length > 14 ? `${team.name.slice(0, 13)}…` : team.name;
         const status = isOnMealBreak(team) ? 'meal' : isFixedPost(team) ? 'fixed' : team.status;
-        return `<g class="venue-map-unit${team.id === selectedVenueTeam ? ' is-selected' : ''}" data-map-team="${team.id}" data-status="${team.status}"${isFixedPost(team) ? ' data-fixed-post="true"' : ''}${isOnMealBreak(team) ? ' data-meal-break="true"' : ''} role="button" tabindex="0" aria-label="Change status for ${escapeHTML(team.name)}, ${escapeHTML(post.name)}, ${statusNames[team.status]}${isOnMealBreak(team) ? ', on meal break' : ''}"><title>${escapeHTML(team.name)} · ${escapeHTML(post.name)} · ${statusNames[team.status]}${isFixedPost(team) ? ' · Fixed post' : ''}${isOnMealBreak(team) ? ' · On meal break' : ''}</title><circle class="venue-unit-hit" cx="${x}" cy="${markerY - 5}" r="23"/><ellipse class="venue-ball-shadow" cx="${x + 1}" cy="${markerY + 9}" rx="8" ry="2.5"/><circle class="venue-selection-ring" cx="${x}" cy="${markerY}" r="13"/><circle class="venue-unit-ball" cx="${x}" cy="${markerY}" r="8" fill="url(#venue-ball-${status})"/><text x="${x}" y="${markerY - 16}" text-anchor="middle" class="venue-marker-name">${escapeHTML(label)}</text></g>`;
+        return `<g class="venue-map-unit${team.id === selectedVenueTeam ? ' is-selected' : ''}" data-map-team="${team.id}" data-status="${team.status}"${isFixedPost(team) ? ' data-fixed-post="true"' : ''}${isOnMealBreak(team) ? ' data-meal-break="true"' : ''}${team.status === 'onscene' ? ' aria-haspopup="dialog" aria-expanded="false"' : ''} role="button" tabindex="0" aria-label="Change status for ${escapeHTML(team.name)}, ${escapeHTML(post.name)}, ${statusNames[team.status]}${isOnMealBreak(team) ? ', on meal break' : ''}"><title>${escapeHTML(team.name)} · ${escapeHTML(post.name)} · ${statusNames[team.status]}${isFixedPost(team) ? ' · Fixed post' : ''}${isOnMealBreak(team) ? ' · On meal break' : ''}</title><circle class="venue-unit-hit" cx="${x}" cy="${markerY - 5}" r="23"/><ellipse class="venue-ball-shadow" cx="${x + 1}" cy="${markerY + 9}" rx="8" ry="2.5"/><circle class="venue-selection-ring" cx="${x}" cy="${markerY}" r="13"/><circle class="venue-unit-ball" cx="${x}" cy="${markerY}" r="8" fill="url(#venue-ball-${status})"/><text x="${x}" y="${markerY - 16}" text-anchor="middle" class="venue-marker-name">${escapeHTML(label)}</text></g>`;
     };
     let drawing = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${mapWidth} ${height}" role="group" aria-labelledby="venue-svg-title"><title id="venue-svg-title">Bill Graham Civic Auditorium · ${focused ? floors[0].name : '3D view'}</title><defs>${gradients}</defs>`;
-    for (const { level, y } of [...layout].reverse()) {
+    for (const { level, y, roamingStretch, roamingPadding } of [...layout].reverse()) {
         const count = teams.filter(team => venuePostForTeam(team)?.level === level.id).length;
-        const basementStretch = level.id === 'b' ? Math.max(0, Math.ceil(count / 5) - 1) * rowHeight : 0;
+        const floorStretch = level.id === 'b' ? Math.max(0, Math.ceil(count / 5) - 1) * rowHeight : roamingStretch + roamingPadding;
         const floorPoint = (x, z, bottom = 0) => {
             const point = project(x, z, y, bottom);
-            point[1] += basementStretch * (z + 110) / 220;
+            point[1] += floorStretch * (z + 110) / 220;
             return point;
         };
         drawing += `<g class="venue-floor" data-floor="${level.id}"><text x="24" y="${y - 2}" class="venue-floor-name">${level.name}</text><text x="24" y="${y + 18}" class="venue-floor-detail">${count} unit${count === 1 ? '' : 's'}</text>`;
@@ -940,21 +1038,21 @@ function renderVenueMap() {
             const face = [...edge.map(([x, z]) => floorPoint(x, z)), ...edge.slice().reverse().map(([x, z]) => floorPoint(x, z, 6))];
             drawing += `<polygon points="${face.map(p => p.join(',')).join(' ')}" class="venue-slab-edge"/>`;
         }
-        drawing += `<polygon points="${points(outer, y, 0, basementStretch)}" class="venue-slab"/>`;
+        drawing += `<polygon points="${points(outer, y, 0, floorStretch)}" class="venue-slab"/>`;
         if (level.id === '1') {
-            const [sx, sy] = project(0, -96, y);
-            drawing += `<polygon points="${points(box(-120, -107, 120, -85), y)}" class="venue-stage"/><text x="${sx}" y="${sy + 3}" text-anchor="middle" class="venue-stage-label">STAGE</text>`;
+            const [sx, sy] = floorPoint(0, -96);
+            drawing += `<polygon points="${points(box(-120, -107, 120, -85), y, 0, floorStretch)}" class="venue-stage"/><text x="${sx}" y="${sy + 3}" text-anchor="middle" class="venue-stage-label">STAGE</text>`;
         }
-        const groveHasRoaming = ['1', '2'].includes(level.id);
+        const hasRoaming = ['1', '2'].includes(level.id);
         const groveHasTableService = level.id === '1';
         const shapes = level.id === 'b' ? [
             { id: 'venue-b-basement', side: 'Basement', coords: outer, x: 0, z: 0 }
         ] : [
             { id: `venue-${level.id}-polk`, side: 'Polk', coords: box(170, level.id === '4' ? 0 : -110, 270, 110), x: 220, z: level.id === '4' ? 65 : 0 },
             { id: `venue-${level.id}-larkin`, side: 'Larkin', coords: box(-270, -110, -170, 110), x: -220, z: 0 },
-            { id: `venue-${level.id}-grove`, side: 'Grove', coords: box(groveHasTableService ? -65 : -165, 62, groveHasTableService ? 65 : groveHasRoaming ? -4 : 165, 110), x: groveHasTableService ? 0 : groveHasRoaming ? -83 : 0, z: 89 }
+            { id: `venue-${level.id}-grove`, side: 'Grove', coords: box(groveHasTableService ? -65 : -165, 62, 165, 110), x: groveHasTableService ? 50 : 0, z: 89 }
         ];
-        if (groveHasRoaming) shapes.push({ id: `venue-${level.id}-roaming`, side: 'Grove', label: 'ROAMING', coords: box(groveHasTableService ? 70 : 4, 62, 165, 110), x: groveHasTableService ? 120 : 84, z: 89 });
+        if (hasRoaming) shapes.push({ id: `venue-${level.id}-roaming`, side: 'Roaming', label: 'ROAMING', coords: box(-165, groveHasTableService ? -4 : -70, 165, 58), x: 0, z: 0 });
         if (groveHasTableService) shapes.push({ id: 'venue-1-table-service', side: 'Grove', label: 'TABLE SERVICE', coords: box(-165, 62, -70, 110), x: -120, z: 89 });
         const pitPosition = pitSides[pitSide];
         if (level.id === '1') shapes.push({ id: 'venue-1-pit', side: 'Pit', coords: box(pitPosition.minX, -80, pitPosition.maxX, -5), x: pitPosition.x, z: -65 });
@@ -967,10 +1065,11 @@ function renderVenueMap() {
             const description = shape.id === 'venue-1-pit'
                 ? `${pitSide === 'stage-left' ? 'stage left' : 'stage right'} inside 1st floor auditorium, near ${pitPosition.street}`
                 : post.mapDescription;
-            const [cx, cy] = project(shape.x, shape.z, y);
+            const [cx, projectedY] = project(shape.x, shape.z, y);
+            const cy = projectedY + (roamingStretch + roamingPadding) * (shape.z + 110) / 220;
             const selected = members.some(team => team.id === selectedVenueTeam);
-            const cls = `venue-destination${medical ? ' venue-medical' : ''}${post.fixed ? ' venue-fixed-post' : ''}${selected ? ' venue-occupied-selected' : ''}`;
-            drawing += `<g class="${cls}" data-venue-post="${shape.id}" data-venue-side="${shape.side}"><polygon points="${points(shape.coords, y, 0, basementStretch)}" class="venue-zone-surface" tabindex="0" role="button" aria-label="${escapeHTML(post.name)}${post.fixed ? `, fixed post, ${escapeHTML(description)}` : ''}, ${members.length} units"/></g>`;
+            const cls = `venue-destination${medical ? ' venue-medical' : ''}${post.fixed ? ' venue-fixed-post' : ''}${post.roaming ? ' venue-roaming' : ''}${selected ? ' venue-occupied-selected' : ''}`;
+            drawing += `<g class="${cls}" data-venue-post="${shape.id}" data-venue-side="${shape.side}"><polygon points="${points(shape.coords, y, 0, floorStretch)}" class="venue-zone-surface" tabindex="0" role="button" aria-label="${escapeHTML(post.name)}${post.fixed ? `, fixed post, ${escapeHTML(description)}` : ''}, ${members.length} units"/></g>`;
             return { shape, members, cx, cy, post };
         });
         for (const { shape, members, cx, cy, post } of zoneData) {
@@ -978,7 +1077,8 @@ function renderVenueMap() {
             drawing += `<g class="venue-team-layer" data-venue-post="${shape.id}">`;
             const cols = columns(post, members.length);
             const medicalOffset = level.id === '4' && shape.side === 'Polk' ? Math.max(0, atPost('clinic-zone').length - 1) * rowHeight : 0;
-            const labelY = shape.id === 'clinic-zone' || shape.side === 'Pit' ? cy - 37
+            const labelY = post.roaming ? (members.length ? cy + roamingStretch / 2 + 25 : cy + 4)
+                : shape.id === 'clinic-zone' || shape.side === 'Pit' ? cy - 37
                 : cy + (members.length ? (Math.ceil(members.length / cols) - 1) * rowHeight + 25 + medicalOffset : 4);
             drawing += `<text x="${cx}" y="${labelY}" text-anchor="middle" class="venue-side-label${shape.id === 'clinic-zone' ? ' venue-medical-label' : ''}">${shape.id === 'clinic-zone' ? '+ MEDICAL' : shape.label || shape.side.toUpperCase()}</text>`;
             for (let slot = 0; slot < members.length; slot++) {
@@ -986,9 +1086,9 @@ function renderVenueMap() {
                 const row = Math.floor(slot / cols);
                 const rowSize = Math.min(cols, members.length - row * cols);
                 const column = slot % cols - (rowSize - 1) / 2;
-                const pitMarker = shape.side === 'Pit' ? project(shape.x + column * 80, shape.z, y) : null;
+                const pitMarker = shape.side === 'Pit' ? floorPoint(shape.x + column * 80, shape.z) : null;
                 const x = pitMarker ? pitMarker[0] : cx + column * (post.fixed ? 72 : 104);
-                const markerY = (pitMarker ? pitMarker[1] : cy) + row * rowHeight + medicalOffset;
+                const markerY = (pitMarker ? pitMarker[1] : cy) + row * rowHeight + medicalOffset - (post.roaming ? roamingStretch / 2 : 0);
                 drawing += teamMarker(team, post, x, markerY);
             }
             drawing += '</g>';
@@ -997,12 +1097,12 @@ function renderVenueMap() {
     }
     if (outsideVisible) {
         const post = venuePosts.find(post => post.id === 'venue-outside');
-        drawing += `<g class="venue-outside-area" data-venue-post="${post.id}"><g class="venue-destination" data-venue-post="${post.id}"><polygon points="320,${outsideY} 680,${outsideY} 680,${outsideY + outsideHeight} 320,${outsideY + outsideHeight}" class="venue-zone-surface" tabindex="0" role="button" aria-label="Outside of Venue, ${outsideMembers.length} units"/></g><text x="500" y="${outsideY + 25}" text-anchor="middle" class="venue-floor-name">Outside of Venue</text><text x="500" y="${outsideY + 44}" text-anchor="middle" class="venue-floor-detail">${outsideMembers.length} unit${outsideMembers.length === 1 ? '' : 's'}</text><g class="venue-team-layer" data-venue-post="${post.id}">`;
+        drawing += `<g class="venue-outside-area" data-venue-post="${post.id}"><ellipse cx="${mapCenter}" cy="${outsideCenterY + 7}" rx="${outsideRx}" ry="${outsideRy}" class="venue-slab-edge"/><g class="venue-destination" data-venue-post="${post.id}"><ellipse cx="${mapCenter}" cy="${outsideCenterY}" rx="${outsideRx}" ry="${outsideRy}" class="venue-zone-surface" tabindex="0" role="button" aria-label="Outside of Venue, ${outsideMembers.length} units"/></g><text x="24" y="${outsideCenterY - 2}" class="venue-floor-name">Outside of Venue</text><text x="24" y="${outsideCenterY + 18}" class="venue-floor-detail">${outsideMembers.length} unit${outsideMembers.length === 1 ? '' : 's'}</text><g class="venue-team-layer" data-venue-post="${post.id}">`;
         for (let slot = 0; slot < outsideMembers.length; slot++) {
             const row = Math.floor(slot / outsideColumns);
             const rowSize = Math.min(outsideColumns, outsideMembers.length - row * outsideColumns);
-            const x = 500 + (slot % outsideColumns - (rowSize - 1) / 2) * 104;
-            drawing += teamMarker(outsideMembers[slot], post, x, outsideY + 76 + row * rowHeight);
+            const x = mapCenter + (slot % outsideColumns - (rowSize - 1) / 2) * 88;
+            drawing += teamMarker(outsideMembers[slot], post, x, outsideCenterY + (row - (outsideRows - 1) / 2) * rowHeight);
         }
         drawing += '</g></g>';
     }
@@ -1123,7 +1223,7 @@ function initializeVenue() {
         if (selectedVenueTeam) {
             const destination = target.dataset.venuePost;
             moveVenueTeam(selectedVenueTeam, destination);
-            if (event.type === 'keydown') document.querySelector(`[data-venue-post="${destination}"] polygon`)?.focus({ preventScroll: true });
+            if (event.type === 'keydown') document.querySelector(`[data-venue-post="${destination}"] .venue-zone-surface`)?.focus({ preventScroll: true });
         } else venueMessage('Select a unit in the unit list first, then choose its destination.');
     };
     canvas.addEventListener('click', activateMap);
@@ -1139,6 +1239,7 @@ function initializeVenue() {
         if (!venueDrag.moving && Math.hypot(event.clientX - venueDrag.x, event.clientY - venueDrag.y) < 6) return;
         event.preventDefault();
         if (!venueDrag.moving) {
+            hideCallActions();
             venueDrag.moving = true;
             startDragScroll(event);
             const ghost = document.createElement('div');
@@ -1166,6 +1267,7 @@ function initializeVenue() {
     document.addEventListener('pointercancel', finishVenueDrag);
     document.addEventListener('keydown', event => {
         if (event.key !== 'Escape') return;
+        if (callActionTeam) { event.preventDefault(); hideCallActions(true); return; }
         if (venueDrag) { suppressVenueClickUntil = Date.now() + 350; finishVenueDrag(); }
         else if (activeView === 'venue' && selectedVenueTeam) { selectedVenueTeam = null; renderVenue(); venueMessage('Selection cleared.'); }
     });
@@ -1222,6 +1324,7 @@ document.addEventListener('keydown', e => {
     }
 });
 initializeVenue();
+initializeCallActions();
 initializeDragScrolling();
 refresh();
 

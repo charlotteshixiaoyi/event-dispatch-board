@@ -18,7 +18,8 @@ Track teams, post assignments, statuses, and meal breaks during an event.
 
 - **Move a team:** Drag its card to another post, or choose a new **Post** in the roster. Hold near the top or bottom of the screen to scroll while dragging.
 - **Update status:** Use the **Status** dropdown, or tap a team card or map ball to cycle through statuses.
-- **Main Medical:** Assigning a team here also sets its status to **At Medical**.
+  Tap **Roaming** to set **On call**. Tap an **On call** team to choose **Clear call** (back to **Roaming**) or **Start transport** (**Transporting**). The next transport taps set **At Main Medical**, then **Roaming**. On the map, these choices appear above the team's ball; on the board, they appear above its card. Tap outside or press **Escape** to dismiss them.
+- **Main Medical:** Assigning a team here also sets its status to **At Main Medical**.
 - **Fix a mistake:** Select **Undo**.
 
 **Level** shows the number of available roaming teams. Teams at fixed posts or on a meal break are not included.
@@ -30,6 +31,8 @@ Teams without a post stay under **No post assigned** at the bottom of the board.
 Select Bill Graham as the venue, then open **Venue 3D**. The board and map show the same teams.
 
 Drag a team onto its destination. You can also select it from the **Units** list, then tap the destination. Tapping a team ball changes its status.
+
+Roaming teams sit in the open center of the 1st and 2nd floors, with one **Roaming** label on each. **Outside of Venue** appears as a small oval platform with a raised edge and grows when needed to fit its teams.
 
 The map starts with the 1st, 2nd, and 4th floors. Under **Add additional location**, check **Outside of Venue**, **Basement**, or **Third floor** as needed. Hiding a location keeps its team assignments.
 
@@ -109,7 +112,7 @@ Run the regression suite from the project root:
 node tests/venue-state.test.mjs
 ```
 
-The suite currently contains 59 checks for assignments, status transitions, drag events, persistence, backup compatibility, and Undo. It runs with Node's built-in modules and an in-memory DOM, without launching a browser.
+The suite currently contains 62 checks for assignments, status transitions, drag events, persistence, backup compatibility, and Undo. It runs with Node's built-in modules and an in-memory DOM, without launching a browser.
 
 For UI changes, also verify responsive layout, keyboard interaction, native and pointer dragging, edge scrolling, and service worker behavior in a browser.
 
@@ -130,6 +133,8 @@ Both views render the same `teams` array. Route team reassignment through `moveT
 | `additionalVenueLocations` | Enabled optional IDs: `outside`, `b`, and `3`. |
 
 Status values are `roaming`, `onscene`, `transporting`, and `atclinic`. Timestamps are Unix milliseconds; displayed times use `America/Los_Angeles`.
+
+The stored `onscene` value displays as **On call** for compatibility with existing boards and backups. Older activity entries also use the updated label when loaded.
 
 For current placement, use `zone` together with `location`: `clinic-zone` means Main Medical, while `location` can retain the previous field post. `mealBreak` is `null` before a break; an active break has `startedAt` and a null `returnedAt`.
 

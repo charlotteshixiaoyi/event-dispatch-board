@@ -9,7 +9,7 @@ const document=makeDocument(html);
 const data=new Map();
 const frames=new Map();
 let frameId=0;
-const scrollWindow={innerHeight:800,scrollY:400,addEventListener(){},scrollBy({top}){this.scrollY=Math.max(0,this.scrollY+top);}};
+const scrollWindow={innerWidth:1280,innerHeight:800,scrollY:400,addEventListener(){},scrollBy({top}){this.scrollY=Math.max(0,this.scrollY+top);}};
 const browserGlobals={window:scrollWindow,getComputedStyle:node=>({overflowY:node.style.overflowY||'visible'}),requestAnimationFrame:callback=>{frames.set(++frameId,callback);return frameId;},cancelAnimationFrame:id=>frames.delete(id)};
 const nextFrame=time=>{const callbacks=[...frames.values()];frames.clear();for(const callback of callbacks)callback(time);};
 const context=vm.createContext({...browserGlobals,document,localStorage:{getItem:k=>data.get(k)??null,setItem:(k,v)=>data.set(k,v)},navigator:{},location:{protocol:'file:'},Intl,Date,Set,Map,JSON,Math,Object,Number,String,Array,Blob,URL,setInterval(){},setTimeout(){},confirm:()=>true});
@@ -305,8 +305,14 @@ test('a fixed team on meal break uses the gray meal marker and returns to fixed-
 test('tapping map teams cycles status just like the board, including Medical and Undo',()=>{
  run('suppressVenueClickUntil=0');
  const original=state();
- for(const status of ['onscene','transporting','atclinic','roaming']){
+ for(const [status,choice] of [['onscene'],['roaming','roaming'],['onscene'],['transporting','transporting'],['atclinic'],['roaming']]){
+  const before=state();
   document.querySelector('[data-map-team="t1"]').click();
+  if(choice){
+   assert.deepEqual(state(),before);
+   assert.equal(el('call-actions').hidden,false);
+   document.querySelector(`[data-call-status="${choice}"]`).click();
+  }
   assert.equal(state().teams[0].status,status);
   assert.equal(el('status-t1').value,status);
   assert.equal(el('venue-selected-status').value,status);
@@ -318,16 +324,24 @@ test('tapping map teams cycles status just like the board, including Medical and
    assert.equal(document.querySelector('[data-map-team="t1"] .venue-unit-ball').getAttribute('fill'),'url(#venue-ball-fixed)');
   }
  }
- assert.equal(state().handoffLog.length,original.handoffLog.length+4);
+ assert.equal(state().handoffLog.length,original.handoffLog.length+6);
  assert.ok(state().teams[0].statusSince>=original.teams[0].statusSince);
  run('undoChange()');assert.equal(state().teams[0].status,'atclinic');
- run('undoChange();undoChange();undoChange()');assert.deepEqual(state(),original);
+ run('undoChange();undoChange();undoChange();undoChange();undoChange()');assert.deepEqual(state(),original);
 });
 test('keyboard activation cycles status once and keeps focus when a team moves to Medical',()=>{
  run("venueFloor='1';renderVenue();suppressVenueClickUntil=0");
  document.querySelector('[data-map-team="t1"]').fire('keydown',{key:'Enter'});
  assert.equal(state().teams[0].status,'onscene');
  document.querySelector('[data-map-team="t1"]').fire('keydown',{key:' '});
+ assert.equal(state().teams[0].status,'onscene');
+ assert.equal(el('call-actions').hidden,false);
+ assert.equal(document.activeElement.dataset.callStatus,'roaming');
+ document.fire('keydown',{key:'Escape'});
+ assert.equal(el('call-actions').hidden,true);
+ assert.equal(document.activeElement.dataset.mapTeam,'t1');
+ document.querySelector('[data-map-team="t1"]').fire('keydown',{key:'Enter'});
+ document.querySelector('[data-call-status="transporting"]').click();
  assert.equal(state().teams[0].status,'transporting');
  document.querySelector('[data-map-team="t1"]').fire('keydown',{key:'Enter'});
  assert.equal(state().teams[0].status,'atclinic');
@@ -377,21 +391,28 @@ test('choosing Pit on a post heading moves the whole group into Fixed posts',()=
  assert.equal(saved.teams[1].location,'venue-1-pit');
  run('undoChange()');assert.deepEqual(state(),before);
 });
-test('both roaming destinations sit along the same Grove frontage as the Grove posts',()=>{
+test('roaming teams sit in each floor center with one label and clear Grove frontage',()=>{
  run("moveTeam('t1','venue-1-roaming');moveTeam('t2','venue-2-roaming');updateStatus('t1','roaming')");
  const points=node=>node.getAttribute('points').split(' ').map(pair=>pair.split(',').map(Number));
  for(const level of ['1','2']){
   const roaming=document.querySelector(`.venue-destination[data-venue-post="venue-${level}-roaming"]`);
   const grove=document.querySelector(`.venue-destination[data-venue-post="venue-${level}-grove"]`);
-  assert.equal(roaming.dataset.venueSide,'Grove');
+  assert.equal(roaming.dataset.venueSide,'Roaming');
   assert.equal(grove.dataset.venueSide,'Grove');
   const r=points(roaming.querySelector('polygon')),g=points(grove.querySelector('polygon'));
-  const [a,b]=[g[2],g[3]];
-  const distance=p=>Math.abs((b[1]-a[1])*p[0]-(b[0]-a[0])*p[1]+b[0]*a[1]-b[1]*a[0])/Math.hypot(b[1]-a[1],b[0]-a[0]);
-  assert.ok(distance(r[2])<.25&&distance(r[3])<.25);
+  assert.ok(roaming.classList.contains('venue-roaming'));
+  const floor=roaming.closest('.venue-floor');
+  const slab=points(floor.querySelector('.venue-slab'));
+  const center=slab.reduce((sum,p)=>[sum[0]+p[0]/4,sum[1]+p[1]/4],[0,0]);
+  const ball=floor.querySelector(`[data-map-team="${level==='1'?'t1':'t2'}"] .venue-unit-ball`);
+  assert.ok(Math.abs(Number(ball.getAttribute('cx'))-center[0])<.1);
+  assert.ok(Math.abs(Number(ball.getAttribute('cy'))-center[1])<.1);
+  assert.equal(floor.querySelectorAll('.venue-side-label').filter(node=>node.textContent==='ROAMING').length,1);
+  assert.ok(r[2][1]<g[2][1]&&r[3][1]<g[3][1]);
+  assert.ok(!floor.textContent.includes('Covers Grove'));
  }
- assert.equal(run('venuePostForTeam(teams[0]).side'),'Grove');
- assert.equal(run('venuePostForTeam(teams[1]).side'),'Grove');
+ assert.equal(run('venuePostForTeam(teams[0]).side'),'Roaming');
+ assert.equal(run('venuePostForTeam(teams[1]).side'),'Roaming');
 });
 test('the Medical shortcut is removed while the Medical map destination remains',()=>{
  assert.equal(el('locate-medical'),null);
@@ -626,7 +647,7 @@ test('one additional-location menu offers Outside of Venue, Basement and Third f
 test('each optional location can be enabled independently and appears before Unassigned on the board',()=>{
  for(const [toggle,level,post] of [['outside','outside','venue-outside'],['basement','b','venue-b-basement'],['third','3','venue-3-grove']]){
   el(`venue-show-${toggle}`).checked=true;el(`venue-show-${toggle}`).fire('change');
-  assert.ok(document.querySelector(`.venue-destination[data-venue-post="${post}"] polygon`));
+  assert.ok(document.querySelector(`.venue-destination[data-venue-post="${post}"] .venue-zone-surface`));
   assert.ok(document.querySelector(`[data-location="${post}"]`));
   assert.ok(state().additionalVenueLocations.includes(level));
   assert.equal(document.querySelectorAll('#field-locations .field-location').at(-1).dataset.location,'unassigned');
@@ -637,17 +658,18 @@ test('Outside of Venue accepts native map drops, keyboard moves and dispatch-boa
  const transfer={values:{},setData(k,v){this.values[k]=v;},getData(k){return this.values[k]||'';}};
  const before=state().teams[0];
  document.querySelector('[data-move-team="topt"]').fire('dragstart',{clientX:400,clientY:300,dataTransfer:transfer});
- document.querySelector('.venue-destination[data-venue-post="venue-outside"] polygon').fire('dragover',{dataTransfer:transfer});
+ document.querySelector('.venue-destination[data-venue-post="venue-outside"] .venue-zone-surface').fire('dragover',{dataTransfer:transfer});
  assert.ok(document.querySelector('.venue-destination[data-venue-post="venue-outside"]').classList.contains('is-drop-target'));
- document.querySelector('.venue-destination[data-venue-post="venue-outside"] polygon').fire('drop',{dataTransfer:transfer});
+ document.querySelector('.venue-destination[data-venue-post="venue-outside"] .venue-zone-surface').fire('drop',{dataTransfer:transfer});
  assert.equal(state().teams[0].location,'venue-outside');
  assert.equal(state().teams[0].status,before.status);
  assert.equal(state().teams[0].statusSince,before.statusSince);
  assert.equal(document.querySelector('[data-map-team="topt"]').closest('[data-venue-post]').dataset.venuePost,'venue-outside');
  assert.ok(document.querySelector('[data-location="venue-outside"]').textContent.includes('OPTIONAL'));
  run("moveTeam('topt','venue-1-polk');selectVenueTeam('topt');suppressVenueClickUntil=0");
- document.querySelector('.venue-destination[data-venue-post="venue-outside"] polygon').fire('keydown',{key:'Enter'});
+ document.querySelector('.venue-destination[data-venue-post="venue-outside"] .venue-zone-surface').fire('keydown',{key:'Enter'});
  assert.equal(state().teams[0].location,'venue-outside');
+ assert.equal(document.activeElement.tagName,'ellipse');
  run("moveTeam('topt','unassigned');setView('dispatch')");
  el('topt').fire('dragstart',{clientX:400,clientY:300,dataTransfer:transfer});
  document.querySelector('[data-location="venue-outside"]').fire('drop',{dataTransfer:transfer});
@@ -690,13 +712,19 @@ test('optional locations and outside assignments survive backups, startup and ca
   assert.deepEqual(JSON.parse(run(`JSON.stringify(readBoard(${JSON.stringify({teams:[],locations:[],additionalVenueLocations:value})}).additionalVenueLocations)`)),expected);
  }
 });
-test('a crowded Outside of Venue box grows to keep every team inside its drop area',()=>{
+test('a crowded Outside of Venue platform grows to keep every team inside its ellipse',()=>{
  run("replaceBoard(readBoard({teams:Array.from({length:24},(_,i)=>({id:'tout'+i,name:'OUT-'+i,status:'roaming',location:'venue-outside'})),locations:[],venue:'bill-graham',additionalVenueLocations:['outside']}))");
- const polygon=document.querySelector('.venue-destination[data-venue-post="venue-outside"] polygon').getAttribute('points').split(' ').map(pair=>pair.split(',').map(Number));
+ const ellipse=document.querySelector('.venue-destination[data-venue-post="venue-outside"] ellipse');
+ const [cx,cy,rx,ry]=['cx','cy','rx','ry'].map(name=>Number(ellipse.getAttribute(name)));
+ const area=ellipse.closest('.venue-outside-area');
+ const rim=area.querySelector('.venue-slab-edge');
+ assert.equal(area.querySelector('polygon'),null);
+ assert.equal(rim.tagName,'ellipse');
+ assert.equal(Number(rim.getAttribute('cy')),cy+7);
  assert.equal(document.querySelectorAll('.venue-outside-area .venue-unit-ball').length,24);
  for(const ball of document.querySelectorAll('.venue-outside-area .venue-unit-ball')){
   const x=Number(ball.getAttribute('cx')),y=Number(ball.getAttribute('cy'));
-  assert.ok(x-8>polygon[0][0]&&x+8<polygon[1][0]&&y-8>polygon[0][1]&&y+8<polygon[2][1]);
+  for(const dx of [-8,8])for(const dy of [-8,8])assert.ok(((x+dx-cx)/rx)**2+((y+dy-cy)/ry)**2<1);
  }
 });
 test('native team dragging scrolls down and up at viewport edges, keeps scrolling while held, and stops in the middle',()=>{
@@ -743,7 +771,7 @@ test('pointer dragging a map marker scrolls the page and still drops into Outsid
  run("moveTeam('tout0','venue-1-polk');suppressVenueClickUntil=0");
  const before=state().teams[0];
  document.querySelector('[data-map-team="tout0"]').fire('pointerdown',{button:0,pointerId:90,clientX:300,clientY:300});
- document.hitTarget=document.querySelector('.venue-destination[data-venue-post="venue-outside"] polygon');
+ document.hitTarget=document.querySelector('.venue-destination[data-venue-post="venue-outside"] .venue-zone-surface');
  document.fire('pointermove',{pointerId:90,clientX:300,clientY:790});
  const start=scrollWindow.scrollY;nextFrame(0);assert.ok(scrollWindow.scrollY>start);
  document.fire('pointermove',{pointerId:90,clientX:300,clientY:10});
@@ -769,5 +797,79 @@ test('the default three floors use a larger fitted layout with no clipped slabs 
  run("venueAngle=18;toggleAdditionalVenueLocation('b',true)");
  assert.equal(document.querySelectorAll('.venue-floor').length,4);
  assert.ok(el('venue-canvas').querySelector('svg').getAttribute('viewBox').startsWith('0 0 840 '));
+});
+test('board taps support both call paths with the new labels and independent units',()=>{
+ run("replaceBoard(readBoard({teams:[{id:'tcycle1',name:'CYCLE-1',status:'roaming',location:'venue-1-roaming'},{id:'tcycle2',name:'CYCLE-2',status:'roaming',location:'venue-2-roaming'}],locations:[],venue:'bill-graham'}));setView('dispatch');lastDragEnd=0");
+ for(const [status,choice] of [['onscene'],['roaming','roaming'],['onscene'],['transporting','transporting'],['atclinic'],['roaming']]){
+  const before=state();
+  el('tcycle1').click();
+  if(choice){
+   assert.deepEqual(state(),before);
+   assert.equal(el('call-actions').hidden,false);
+   assert.equal(el('call-actions-name').textContent,'CYCLE-1');
+   document.querySelector(`[data-call-status="${choice}"]`).click();
+  }
+  assert.equal(state().teams[0].status,status);
+  assert.equal(state().teams[1].status,'roaming');
+  assert.equal(el('status-tcycle1').value,status);
+  assert.equal(el('level-number').textContent,status==='roaming'?'2':'1');
+  assert.equal(el('onscene-total').textContent,status==='onscene'?'1':'0');
+  assert.equal(el('tcycle1').querySelector('.team-status').textContent,{onscene:'On call',roaming:'Roaming',transporting:'Transporting',atclinic:'At Main Medical'}[status]);
+ }
+ assert.ok(!/on scene/i.test(document.body.textContent));
+ assert.ok(state().handoffLog.some(entry=>entry.message.includes('On call')));
+});
+test('map choices sit above the ball, dismiss safely, and preserve backups, reload, and Undo',()=>{
+ el('tcycle1').click();
+ run("setView('venue');suppressVenueClickUntil=0");
+ const onCall=state();
+ document.querySelector('[data-map-team="tcycle1"]').click();
+ assert.deepEqual(state(),onCall);
+ const popup=el('call-actions');
+ const ball=document.querySelector('[data-map-team="tcycle1"] .venue-unit-ball');
+ assert.equal(popup.hidden,false);
+ assert.equal(popup.closest('.venue-sidebar'),null);
+ assert.ok(parseFloat(popup.style.top)+popup.getBoundingClientRect().height<ball.getBoundingClientRect().top);
+ assert.ok(Number.isFinite(parseFloat(popup.style.left)));
+ ball.getBoundingClientRect=()=>({left:374,top:200,width:16,height:16});
+ popup.getBoundingClientRect=()=>({width:276,height:100});
+ scrollWindow.innerWidth=390;
+ run('positionCallActions()');
+ assert.equal(parseFloat(popup.style.left),106);
+ assert.equal(parseFloat(popup.style.top),84);
+ scrollWindow.innerWidth=1280;
+ document.body.click();assert.equal(popup.hidden,true);assert.deepEqual(state(),onCall);
+ document.querySelector('[data-map-team="tcycle1"]').click();
+ document.querySelector('[data-call-status="roaming"]').click();
+ assert.equal(state().teams[0].status,'roaming');
+ run('undoChange()');assert.deepEqual(state(),onCall);assert.equal(popup.hidden,true);
+ document.querySelector('[data-map-team="tcycle1"]').click();
+ document.querySelector('[data-call-status="transporting"]').click();
+ assert.equal(state().teams[0].status,'transporting');
+ const saved=state();
+ run('replaceBoard(readBoard(JSON.parse(serializeBoard())))');assert.deepEqual(state(),saved);
+ const startupDocument=makeDocument(html);
+ const startupData=new Map([['charlotte-dispatch-board-v1',JSON.stringify(saved)]]);
+ const startupContext=vm.createContext({...browserGlobals,document:startupDocument,localStorage:{getItem:key=>startupData.get(key)??null,setItem:(key,value)=>startupData.set(key,value)},navigator:{},location:{protocol:'file:'},Intl,Date,Set,Map,JSON,Math,Object,Number,String,Array,Blob,URL,setInterval(){},setTimeout(){},confirm:()=>true});
+ vm.runInContext(source,startupContext);
+ startupDocument.getElementById('tcycle1').click();
+ assert.equal(JSON.parse(startupData.get('charlotte-dispatch-board-v1')).teams[0].status,'atclinic');
+ document.querySelector('[data-map-team="tcycle1"]').click();
+ assert.equal(state().teams[0].status,'atclinic');
+ run('undoChange()');assert.deepEqual(state(),saved);
+ run("setView('dispatch')");el('tcycle1').click();
+ assert.equal(state().teams[0].status,'atclinic');
+ const selector=el('status-tcycle1');selector.value='roaming';selector.fire('change');
+ el('tcycle1').click();assert.equal(state().teams[0].status,'onscene');
+});
+test('older saved on-scene units and activity entries use On call and both call choices',()=>{
+ run("replaceBoard(readBoard({teams:[{id:'tlegacy',name:'LEGACY',status:'onscene',location:'venue-1-polk'}],locations:[],venue:'bill-graham',handoffLog:[{at:Date.now(),team:'LEGACY',message:'Roaming → On scene'}]}));setView('dispatch')");
+ assert.equal(el('tlegacy').querySelector('.team-status').textContent,'On call');
+ assert.equal(state().handoffLog[0].message,'Roaming → On call');
+ el('tlegacy').click();assert.equal(state().teams[0].status,'onscene');
+ document.querySelector('[data-call-status="roaming"]').click();assert.equal(state().teams[0].status,'roaming');
+ el('tlegacy').click();assert.equal(state().teams[0].status,'onscene');
+ el('tlegacy').click();document.querySelector('[data-call-status="transporting"]').click();
+ assert.equal(state().teams[0].status,'transporting');
 });
 console.log(`${passed} checks passed.`);
