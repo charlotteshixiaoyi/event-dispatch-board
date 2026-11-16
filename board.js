@@ -227,7 +227,7 @@ function visibleFieldLocations() {
     const visible = fieldLocations().filter(location => !location.fixed && (!venuePosts.some(post => post.id === location.id)
         || (selectedVenue === 'bill-graham' && venueBoardPosts.includes(location.id))
         || teams.some(team => team.zone === 'field-zone' && team.location === location.id)));
-    return [...visible.filter(location => location.id !== 'unassigned'), ...visible.filter(location => location.id === 'unassigned')];
+    return [...visible.filter(location => !builtInLocations.some(post => post.id === location.id)), ...builtInLocations];
 }
 function isFixedPost(team) {
     return team.zone === 'field-zone' && (team.location === 'pit-table-service'
@@ -554,6 +554,8 @@ function renderBoard() {
         if (location.id === 'unassigned') grid.id = 'field-grid';
         section.append(header, grid); field.appendChild(section); grids.set(location.id, grid);
         if (location.id === 'pit-table-service') {
+            section.classList.add('fixed-posts');
+            grid.classList.add('fixed-general-grid');
             for (const post of venuePosts.filter(post => post.fixed && (selectedVenue === 'bill-graham'
                 || teams.some(team => team.zone === 'field-zone' && team.location === post.id)))) {
                 const subpost = document.createElement('section');
@@ -569,7 +571,6 @@ function renderBoard() {
                 subpost.addEventListener('dragleave', dragLeave);
                 subpost.addEventListener('drop', event => drop(event, 'field-zone', post.id));
                 section.append(subpost); grids.set(post.id, postGrid);
-                grid.classList.add('fixed-general-grid');
             }
         }
     });

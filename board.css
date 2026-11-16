@@ -90,8 +90,12 @@ h2 { font-size: 1rem; font-weight: 700; letter-spacing: -.025em; }
 .location-form { margin-bottom: 18px; }
 .location-form .input-field { flex: 1; }
 .location-form input { width: 100%; }
-.field-locations { display: grid; gap: 10px; }
-.field-location { min-width: 0; padding: 12px; background: var(--soft-surface); border-radius: 8px; }
+.field-locations { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.field-location { min-width: 0; padding: 10px; background: var(--soft-surface); border-radius: 8px; }
+.field-location[data-location="pit-table-service"], .field-location[data-location="unassigned"] { grid-column: 1 / -1; }
+.field-location .badge-grid { grid-template-columns: repeat(auto-fill, minmax(min(112px, 100%), 1fr)); gap: 6px; }
+.field-location .team-badge { min-height: 82px; padding: 10px; gap: 3px; }
+.field-location .team-name { font-size: 1.1rem; }
 .location-header { display: flex; align-items: center; gap: 8px; min-height: 28px; margin-bottom: 8px; }
 .location-header h3, .location-header input { flex: 1; min-width: 0; font-size: .82rem; font-weight: 650; }
 .location-header input { width: 0; border: 1px solid transparent; border-radius: 5px; background: transparent; color: var(--ink); padding: 4px 6px; margin-left: -6px; }
@@ -231,19 +235,21 @@ h2 { font-size: 1rem; font-weight: 700; letter-spacing: -.025em; }
 .venue-picker select { width: 100%; min-height: 36px; border: 1px solid #50645c; border-radius: 6px; padding: 6px 9px; background: #243c32; color: #fff; font-size: .8rem; }
 .venue-picker option { background: #fff; color: var(--ink); }
 .input-field select { width: 100%; min-width: 0; min-height: 44px; padding: 8px 0; border: 0; background: transparent; color: var(--ink); font-size: .82rem; }
-.post-name-select { flex: 1; width: 0; min-width: 0; min-height: 40px; padding: 5px; border: 1px solid #d3ded6; border-radius: 6px; background: #fff; color: var(--ink); font-size: .8rem; font-weight: 650; cursor: pointer; }
+.post-name-select { flex: 1; width: 0; min-width: 0; min-height: 36px; padding: 4px; border: 1px solid #d3ded6; border-radius: 6px; background: #fff; color: var(--ink); font-size: .8rem; font-weight: 650; cursor: pointer; }
 .venue-board-post .badge-grid:empty::after { content: none; }
 .venue-board-post .location-header { margin-bottom: 0; }
 .venue-board-post .badge-grid:not(:empty) { margin-top: 8px; }
-body[data-venue="bill-graham"] .field-locations { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-body[data-venue="bill-graham"] .field-location:not(.venue-board-post) { grid-column: 1 / -1; }
 .venue-board-post .remove-location { width: 28px; flex-shrink: 0; }
-.fixed-general-grid:empty::after { content: none; }
-.fixed-subpost { margin-top: 10px; padding: 10px; border: 1px solid #dce4df; border-radius: 7px; background: #edf2ee; }
-.fixed-subpost h4 { flex: 1; margin: 0; font-size: .8rem; font-weight: 650; }
-.fixed-subpost .location-header { margin-bottom: 8px; }
+.fixed-posts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.fixed-posts > .location-header, .fixed-general-grid { grid-column: 1 / -1; }
+.fixed-posts > .location-header { margin-bottom: 0; }
+.fixed-general-grid:empty { display: none; }
+.fixed-subpost { display: flex; flex-direction: column; min-width: 0; padding: 10px; border: 1px solid #dce4df; border-radius: 7px; background: #edf2ee; }
+.fixed-subpost h4 { min-width: 0; margin: 0; font-size: .8rem; font-weight: 650; overflow-wrap: anywhere; }
+.fixed-subpost .location-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; margin-bottom: 8px; }
+.fixed-subpost .badge-grid { grid-template-columns: minmax(0, 1fr); margin-top: auto; }
 .pit-side-select { min-width: 0; min-height: 36px; padding: 6px 8px; border: 1px solid #d3ded6; border-radius: 6px; background: #fff; color: var(--ink); font: inherit; font-size: .74rem; cursor: pointer; }
-.fixed-subpost .pit-side-select { flex: 0 1 220px; width: 0; }
+.fixed-subpost .pit-side-select { grid-column: 1 / -1; grid-row: 2; width: 100%; }
 .pit-side-control { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--muted); font-size: .7rem; }
 .fixed-subpost.drag-over { outline: 2px solid var(--teal); background: #e0f0e7; }
 .view-tabs { display: flex; gap: 5px; margin-bottom: 18px; border-bottom: 1px solid #cbd7cf; }
@@ -345,6 +351,9 @@ body[data-venue="bill-graham"] .field-location:not(.venue-board-post) { grid-col
 .is-venue-view .metric-caption { display: none; }
 .is-venue-view .action-bar { margin-block: 10px; }
 .is-venue-view .view-tabs { margin-bottom: 10px; }
+@media (max-width: 1199px) {
+    .field-locations { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 @media (max-width: 1000px) {
     .masthead .wrap { gap: 16px; }
     .header-status { gap: 16px; }
@@ -361,8 +370,6 @@ body[data-venue="bill-graham"] .field-location:not(.venue-board-post) { grid-col
 }
 @media (max-width: 700px) {
     .pit-side-select { font-size: 1rem; }
-    .fixed-subpost .location-header { flex-wrap: wrap; }
-    .fixed-subpost .pit-side-select { order: 3; flex: 1 1 100%; width: 100%; }
     .masthead .wrap { flex-wrap: wrap; gap: 10px 12px; }
     .brand { flex: 1; }
     .header-status { margin-left: auto; }
@@ -387,5 +394,5 @@ body[data-venue="bill-graham"] .field-location:not(.venue-board-post) { grid-col
     .view-tab { flex: 1; font-size: .82rem; padding-inline: 10px; }
 }
 @media (max-width: 600px) {
-    body[data-venue="bill-graham"] .field-locations { grid-template-columns: minmax(0, 1fr); }
+    .field-locations { grid-template-columns: minmax(0, 1fr); }
 }
