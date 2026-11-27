@@ -425,12 +425,16 @@ function updateMealBreakTimers(now) {
         row.querySelector('.meal-break-time').textContent = timing.description;
     });
     // Ticking must not replace a focused or dragged marker.
+    let labelWidthChanged = false;
     document.querySelectorAll('.venue-meal-countdown[data-deadline]').forEach(timer => {
         const timing = mealBreakTiming(Number(timer.dataset.deadline), now);
+        const text = `${timing.overdue ? '+' : ''}${timing.timer}`;
+        if (timer.textContent.length !== text.length) labelWidthChanged = true;
         timer.dataset.overdue = String(timing.overdue);
-        timer.textContent = `${timing.overdue ? '+' : ''}${timing.timer}`;
+        timer.textContent = text;
         timer.setAttribute('aria-label', `Meal break: ${timing.description}`);
     });
+    if (labelWidthChanged) arrangeVenueLabels(document.getElementById('venue-canvas').querySelector('svg'));
 }
 
 function renderMealBreaks(sortedTeams) {
@@ -1073,10 +1077,16 @@ function venueBallGradients(prefix) {
     return Object.entries(colors).map(([status, stops]) => `<radialGradient id="${prefix}-${status}" cx="32%" cy="25%" r="75%"><stop offset="0" stop-color="${stops[0]}"/><stop offset=".55" stop-color="${stops[1]}"/><stop offset="1" stop-color="${stops[2]}"/></radialGradient>`).join('');
 }
 
+function venueMarkerName(name) {
+    const characters = Array.from(name);
+    const width = value => Array.from(value).reduce((sum, c) => sum + 14 * (/[MW@]/.test(c) ? .95 : /[ilI .-]/.test(c) ? .4 : c.codePointAt(0) > 0x2e80 ? 1 : .68), 0);
+    if (width(name) <= 72) return name;
+    while (characters.length && width(characters.join('') + '…') > 72) characters.pop();
+    return characters.join('') + '…';
+}
+
 function venueTeamMarker(team, post, x, markerY, labelWidth = 0, gradientPrefix = 'venue-ball') {
-    const limit = labelWidth ? 10 : 14;
-    const label = team.name.length > limit ? `${team.name.slice(0, limit - 1)}…` : team.name;
-    const fitLabel = labelWidth && label.length * 8 > labelWidth ? ` textLength="${labelWidth}" lengthAdjust="spacingAndGlyphs"` : '';
+    const label = venueMarkerName(team.name);
     const onBreak = isOnMealBreak(team);
     const fixed = isFixedPost(team);
     const status = onBreak ? 'meal' : team.status;
@@ -1084,18 +1094,17 @@ function venueTeamMarker(team, post, x, markerY, labelWidth = 0, gradientPrefix 
     if (onBreak) {
         const deadline = team.mealBreak.startedAt + mealBreakDuration;
         const timing = mealBreakTiming(deadline);
-        const fitTimer = labelWidth && (timing.timer.length + 1) * 8 > labelWidth ? ` textLength="${labelWidth}" lengthAdjust="spacingAndGlyphs"` : '';
-        countdown = `<text x="${x}" y="${markerY - 16}" text-anchor="middle" class="venue-meal-countdown" data-deadline="${deadline}" data-overdue="${timing.overdue}" role="timer" aria-live="off" aria-label="Meal break: ${timing.description}"${fitTimer}>${timing.overdue ? '+' : ''}${timing.timer}</text>`;
+        countdown = `<text x="${x}" y="${markerY - 16}" text-anchor="middle" class="venue-meal-countdown" data-deadline="${deadline}" data-overdue="${timing.overdue}" role="timer" aria-live="off" aria-label="Meal break: ${timing.description}">${timing.overdue ? '+' : ''}${timing.timer}</text>`;
     }
     const pin = fixed ? `<path class="venue-fixed-pin" d="M-4-5H4L2-1L5 2V3H1V8H-1V3H-5V2L-2-1Z" transform="translate(${x + 11} ${markerY - 8})" aria-hidden="true"/>` : '';
-    return `<g class="venue-map-unit${team.id === selectedVenueTeam ? ' is-selected' : ''}" data-map-team="${team.id}" data-status="${team.status}"${labelWidth ? ' data-crowded="true"' : ''}${fixed ? ' data-fixed-post="true"' : ''}${onBreak ? ' data-meal-break="true"' : ''}${team.status === 'onscene' ? ' aria-haspopup="dialog" aria-expanded="false"' : ''} role="button" tabindex="0" aria-label="Change status for ${escapeHTML(team.name)}, ${escapeHTML(post.name)}, ${statusNames[team.status]}${fixed ? ', fixed post' : ''}${onBreak ? ', on meal break' : ''}">
+    return `<g class="venue-map-unit${team.id === selectedVenueTeam ? ' is-selected' : ''}" data-map-team="${team.id}" data-status="${team.status}"${fixed ? ' data-fixed-post="true"' : ''}${onBreak ? ' data-meal-break="true"' : ''}${team.status === 'onscene' ? ' aria-haspopup="dialog" aria-expanded="false"' : ''} role="button" tabindex="0" aria-label="Change status for ${escapeHTML(team.name)}, ${escapeHTML(post.name)}, ${statusNames[team.status]}${fixed ? ', fixed post' : ''}${onBreak ? ', on meal break' : ''}">
         <title>${escapeHTML(team.name)} · ${escapeHTML(post.name)} · ${statusNames[team.status]}${fixed ? ' · Fixed post' : ''}${onBreak ? ' · On meal break' : ''}</title>
         <circle class="venue-unit-hit" cx="${x}" cy="${markerY - 5}" r="23"/>
         <ellipse class="venue-ball-shadow" cx="${x + 1}" cy="${markerY + 9}" rx="8" ry="2.5"/>
         <circle class="venue-selection-ring" cx="${x}" cy="${markerY}" r="13"/>
         <circle class="venue-unit-ball" cx="${x}" cy="${markerY}" r="8" fill="url(#${gradientPrefix}-${status})"/>
         ${pin}
-        <text x="${x}" y="${markerY - (onBreak ? 32 : 16)}" text-anchor="middle" class="venue-marker-name"${fitLabel}>${escapeHTML(label)}</text>
+        <text x="${x}" y="${markerY - (onBreak ? 32 : 18)}" text-anchor="middle" class="venue-marker-name">${escapeHTML(label)}</text>
         ${countdown}
     </g>`;
 }
@@ -1111,6 +1120,165 @@ function renderUnassignedVenueTeams() {
     // The independent side tray never changes the venue map's drawing dimensions.
     const height = Math.ceil(unassigned.length / 2) * 76;
     tray.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 224 ${height}" width="224" height="${height}" role="group" aria-label="Units awaiting a map post"><defs>${venueBallGradients('venue-unassigned-ball')}</defs>${unassigned.map((team, slot) => venueTeamMarker(team, { name: teamLocationName(team) }, 56 + slot % 2 * 112, 54 + Math.floor(slot / 2) * 76, 96, 'venue-unassigned-ball')).join('')}</svg>`;
+}
+
+// Text is laid out in SVG coordinates after the venue is drawn. Measuring the
+// rendered glyphs keeps this independent of the user's font and display mode.
+// Balls stay inside their assigned posts; only their annotations can move.
+function arrangeVenueLabels(svg) {
+    if (!svg) return;
+    const view = svg.getAttribute('viewBox').split(/\s+/).map(Number);
+    const gap = 4;
+    const padding = 3;
+    const rectangle = (x, y, width, height) => ({ x, y, width, height });
+    const intersects = (a, b) => a.x < b.x + b.width + gap && a.x + a.width + gap > b.x
+        && a.y < b.y + b.height + gap && a.y + a.height + gap > b.y;
+    const measure = text => {
+        if (typeof text.getBBox === 'function') {
+            try {
+                const box = text.getBBox();
+                if (box.width > 0 && box.height > 0 && Number.isFinite(box.x + box.y)) {
+                    return rectangle(box.x, box.y, box.width, box.height);
+                }
+            } catch { /* Hidden SVGs and non-browser checks use conservative bounds. */ }
+        }
+        let size = 12;
+        if (text.classList.contains('venue-marker-name')) size = 14;
+        else if (text.classList.contains('venue-floor-name')) size = 18;
+        else if (text.classList.contains('venue-stage-label')) size = 10;
+        else if (text.classList.contains('venue-medical-label')) size = 12;
+        else if (text.classList.contains('venue-side-label')) size = 12;
+        const width = Number(text.getAttribute('textLength')) || text.textContent.length * size;
+        const x = Number(text.getAttribute('x'));
+        const y = Number(text.getAttribute('y'));
+        return rectangle(x - (text.getAttribute('text-anchor') === 'middle' ? width / 2 : 0), y - size, width, size + 2);
+    };
+    const expanded = box => rectangle(box.x - padding, box.y - padding, box.width + padding * 2, box.height + padding * 2);
+    const obstacles = [...svg.querySelectorAll('.venue-floor-name, .venue-floor-detail')].map(text => expanded(measure(text)));
+    for (const marker of svg.querySelectorAll('.venue-map-unit')) {
+        const ball = marker.querySelector('.venue-unit-ball');
+        const x = Number(ball.getAttribute('cx'));
+        const y = Number(ball.getAttribute('cy'));
+        obstacles.push(rectangle(x - 14, y - 16, marker.querySelector('.venue-fixed-pin') ? 35 : 28, 30));
+    }
+    const globalBounds = () => rectangle(view[0] + 8, view[1] + 8, view[2] - 16, view[3] - 16);
+    const regionFor = element => {
+        const region = element.closest('[data-label-top]');
+        const top = Math.max(view[1] + 8, Number(region?.getAttribute('data-label-top') || view[1] + 8));
+        const bottom = Math.min(view[1] + view[3] - 8, Number(region?.getAttribute('data-label-bottom') || view[1] + view[3] - 8));
+        return rectangle(view[0] + 8, top, view[2] - 16, Math.max(0, bottom - top));
+    };
+    const fits = (box, bounds) => box.x >= bounds.x && box.y >= bounds.y
+        && box.x + box.width <= bounds.x + bounds.width && box.y + box.height <= bounds.y + bounds.height
+        && !obstacles.some(obstacle => intersects(box, obstacle));
+    const place = (width, height, preferred, bounds, anchor) => {
+        const clampX = x => Math.max(bounds.x, Math.min(x, bounds.x + bounds.width - width));
+        const clampY = y => Math.max(bounds.y, Math.min(y, bounds.y + bounds.height - height));
+        const candidates = [preferred];
+        if (anchor) {
+            const { x, y } = anchor;
+            candidates.push(
+                [x + 21, y - height / 2], [x - width - 21, y - height / 2],
+                [x - width / 2, y + 20],
+                [x + 21, y - height - 20], [x - width - 21, y - height - 20],
+                [x + 21, y + 20], [x - width - 21, y + 20]
+            );
+        }
+        for (const step of [16, 32, 48, 72]) {
+            candidates.push([preferred[0] - step, preferred[1]], [preferred[0] + step, preferred[1]],
+                [preferred[0], preferred[1] - step], [preferred[0], preferred[1] + step]);
+        }
+        for (const [x, y] of candidates) {
+            const box = rectangle(clampX(x), clampY(y), width, height);
+            if (fits(box, bounds)) return box;
+        }
+        // Obstacle edges provide useful candidates even in a crowded floor.
+        const near = obstacles.filter(box => box.y < bounds.y + bounds.height + height
+            && box.y + box.height > bounds.y - height);
+        const xs = [...new Set([clampX(preferred[0]), bounds.x, bounds.x + bounds.width - width,
+            ...near.flatMap(box => [clampX(box.x - width - gap), clampX(box.x + box.width + gap)])])]
+            .sort((a, b) => Math.abs(a - preferred[0]) - Math.abs(b - preferred[0]));
+        const ys = [...new Set([clampY(preferred[1]), bounds.y, bounds.y + bounds.height - height,
+            ...near.flatMap(box => [clampY(box.y - height - gap), clampY(box.y + box.height + gap)])])]
+            .sort((a, b) => Math.abs(a - preferred[1]) - Math.abs(b - preferred[1]));
+        let best;
+        let bestDistance = Infinity;
+        for (const y of ys) for (const x of xs) {
+            const distance = (x - preferred[0]) ** 2 + (y - preferred[1]) ** 2;
+            if (distance >= bestDistance) continue;
+            const box = rectangle(x, y, width, height);
+            if (fits(box, bounds)) { best = box; bestDistance = distance; }
+        }
+        return best;
+    };
+    const locate = (width, height, preferred, bounds, anchor) => {
+        let box = place(width, height, preferred, bounds, anchor)
+            || place(width, height, preferred, globalBounds(), anchor);
+        if (!box) {
+            // An unusually full map gains annotation space instead of covering text.
+            box = rectangle(Math.max(view[0] + 8, Math.min(preferred[0], view[0] + view[2] - width - 8)), view[1] + view[3] + 8, width, height);
+            view[3] += height + 16;
+        }
+        obstacles.push(box);
+        return box;
+    };
+    const moveText = (text, x, y) => {
+        text.setAttribute('x', x.toFixed(2));
+        text.setAttribute('y', y.toFixed(2));
+    };
+    // Reserve every venue name first so moving one caption cannot displace a
+    // neighboring caption that already fits at its original location.
+    const captions = [...svg.querySelectorAll('.venue-side-label, .venue-stage-label')]
+        .map(text => ({ text, box: expanded(measure(text)) }));
+    obstacles.push(...captions.map(caption => caption.box));
+    for (const { text, box } of captions) {
+        obstacles.splice(obstacles.indexOf(box), 1);
+        const target = locate(box.width, box.height, [box.x, box.y], regionFor(text));
+        moveText(text, Number(text.getAttribute('x')) + target.x - box.x, Number(text.getAttribute('y')) + target.y - box.y);
+    }
+    for (const marker of svg.querySelectorAll('.venue-map-unit')) {
+        const ball = marker.querySelector('.venue-unit-ball');
+        const anchor = { x: Number(ball.getAttribute('cx')), y: Number(ball.getAttribute('cy')) };
+        const name = marker.querySelector('.venue-marker-name');
+        const timer = marker.querySelector('.venue-meal-countdown');
+        const nameBox = measure(name);
+        const timerBox = timer && measure(timer);
+        const width = Math.max(nameBox.width, timerBox ? Math.max(timerBox.width, 56) : 0) + padding * 2;
+        const height = nameBox.height + (timerBox ? timerBox.height + 5 : 0) + padding * 2;
+        const preferred = [anchor.x - width / 2, anchor.y - 20 - height];
+        const target = locate(width, height, preferred, regionFor(marker), anchor);
+        moveText(name, anchor.x + target.x - preferred[0],
+            target.y + padding + Number(name.getAttribute('y')) - nameBox.y);
+        if (timer) moveText(timer, anchor.x + target.x - preferred[0],
+            target.y + padding + nameBox.height + 5 + Number(timer.getAttribute('y')) - timerBox.y);
+        const moved = Math.abs(target.x - preferred[0]) > 1 || Math.abs(target.y - preferred[1]) > 1;
+        let callout = marker.querySelector('.venue-label-callout');
+        if (moved) {
+            if (!callout) {
+                callout = document.createElementNS ? document.createElementNS('http://www.w3.org/2000/svg', 'rect') : document.createElement('rect');
+                callout.setAttribute('class', 'venue-label-callout');
+                callout.setAttribute('rx', '2');
+                callout.setAttribute('aria-hidden', 'true');
+                marker.insertBefore(callout, name);
+            }
+            for (const [key, value] of Object.entries({ x: target.x, y: target.y, width: target.width, height: target.height })) callout.setAttribute(key, value.toFixed(2));
+        } else if (callout) callout.remove();
+        let leader = marker.querySelector('.venue-label-leader');
+        if (moved && !leader) {
+            leader = document.createElementNS ? document.createElementNS('http://www.w3.org/2000/svg', 'path') : document.createElement('path');
+            leader.setAttribute('class', 'venue-label-leader');
+            leader.setAttribute('aria-hidden', 'true');
+            marker.append(leader);
+        }
+        if (leader) {
+            leader.setAttribute('display', moved ? 'inline' : 'none');
+            const endX = Math.max(target.x, Math.min(anchor.x, target.x + target.width));
+            const endY = Math.max(target.y, Math.min(anchor.y, target.y + target.height));
+            const length = Math.hypot(endX - anchor.x, endY - anchor.y) || 1;
+            leader.setAttribute('d', `M${anchor.x + (endX - anchor.x) * 14 / length},${anchor.y + (endY - anchor.y) * 14 / length} L${endX},${endY}`);
+        }
+    }
+    svg.setAttribute('viewBox', view.join(' '));
 }
 
 function renderVenueMap() {
@@ -1209,7 +1377,7 @@ function renderVenueMap() {
                 - (post.members.some(isOnMealBreak) ? 16 : 0))));
         const topPadding = Math.max(0, -top);
         y += topPadding;
-        const item = { level, y, band, floorStretch, frontStretch, posts };
+        const item = { level, y, band, floorStretch, frontStretch, posts, labelTop: cursor, labelBottom: cursor + band + topPadding };
         cursor += band + topPadding;
         return item;
     });
@@ -1233,7 +1401,7 @@ function renderVenueMap() {
     }).join(' ');
     const gradients = venueBallGradients('venue-ball');
     let drawing = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${mapWidth} ${height}" role="group" aria-labelledby="venue-svg-title"><title id="venue-svg-title">Bill Graham Civic Auditorium · ${focused ? floors[0].name : '3D view'}</title><defs>${gradients}</defs>`;
-    for (const { level, y, floorStretch, frontStretch, posts } of [...layout].reverse()) {
+    for (const { level, y, floorStretch, frontStretch, posts, labelTop, labelBottom } of [...layout].reverse()) {
         const count = teams.filter(team => venuePostForTeam(team)?.level === level.id).length;
         const floorPoint = (x, z, bottom = 0) => {
             const point = project(x, z, y, bottom);
@@ -1246,7 +1414,7 @@ function renderVenueMap() {
             return [a, [a[0] + (b[0] - a[0]) * ratio, 62], b];
         };
         const splitShape = coords => coords.flatMap((a, i) => splitEdge(a, coords[(i + 1) % coords.length]).slice(0, -1));
-        drawing += `<g class="venue-floor" data-floor="${level.id}"><text x="24" y="${y - 2}" class="venue-floor-name">${level.name}</text><text x="24" y="${y + 18}" class="venue-floor-detail">${count} unit${count === 1 ? '' : 's'}</text>`;
+        drawing += `<g class="venue-floor" data-floor="${level.id}" data-label-top="${labelTop}" data-label-bottom="${labelBottom}"><text x="24" y="${y - 2}" class="venue-floor-name">${level.name}</text><text x="24" y="${y + 18}" class="venue-floor-detail">${count} unit${count === 1 ? '' : 's'}</text>`;
         for (const edge of [[outer[1], outer[2]], [outer[2], outer[3]], [outer[3], outer[0]]]) {
             const vertices = splitEdge(...edge);
             const face = [...vertices.map(([x, z]) => floorPoint(x, z)), ...vertices.slice().reverse().map(([x, z]) => floorPoint(x, z, 6))];
@@ -1277,7 +1445,7 @@ function renderVenueMap() {
             drawing += `<g class="venue-team-layer" data-venue-post="${shape.id}">`;
             const positions = markerSpots(packing, floorStretch, frontStretch).map(([x, z]) => floorPoint(x, z));
             const above = shape.id === 'clinic-zone' || shape.side === 'Pit';
-            const labelY = members.length ? (above ? Math.min(...positions.map(point => point[1])) - 37 - (members.some(isOnMealBreak) ? 16 : 0) : Math.max(...positions.map(point => point[1])) + 25)
+            const labelY = post.roaming ? cy + 4 : members.length ? (above ? Math.min(...positions.map(point => point[1])) - 37 - (members.some(isOnMealBreak) ? 16 : 0) : Math.max(...positions.map(point => point[1])) + 25)
                 : cy + (above ? -37 : 4);
             drawing += `<text x="${cx}" y="${labelY}" text-anchor="middle" class="venue-side-label${shape.id === 'clinic-zone' ? ' venue-medical-label' : ''}">${shape.id === 'clinic-zone' ? '+ MEDICAL' : shape.label || shape.side.toUpperCase()}</text>`;
             for (let slot = 0; slot < members.length; slot++) {
@@ -1300,6 +1468,7 @@ function renderVenueMap() {
     }
     drawing += '</svg>';
     document.getElementById('venue-canvas').innerHTML = drawing;
+    arrangeVenueLabels(document.getElementById('venue-canvas').querySelector('svg'));
     renderUnassignedVenueTeams();
     document.getElementById('venue-rotate-left').disabled = venueAngle <= -30;
     document.getElementById('venue-rotate-right').disabled = venueAngle >= 42;

@@ -14,6 +14,16 @@ Track teams, post assignments, statuses, and meal breaks during an event.
 2. Enter each team's call sign and select **Add unit**.
 3. In **Unit roster**, choose each team's **Status** and **Post**.
 
+### Display mode
+
+Use **Light** or **Night** in the header to switch appearance. The board starts in Night mode and remembers your choice in this browser. The same controls remain available in full-screen dispatch mode. Changing the display mode does not alter units, assignments, timers, notes, or Undo history.
+
+The appearance setting is separate from shift backups. If browser storage is blocked, switching still works for the current page.
+
+### Typography
+
+The board, roster, clock, and venue map share one system sans-serif font. Counts and timers use tabular digits from that same font. Section headings and controls share a smaller set of sizes and weights in both display modes.
+
 ### During the event
 
 - **Move a team:** Drag its card to another post, or choose a new **Post** in the roster. Hold near the top or bottom of the screen to scroll while dragging.
@@ -32,7 +42,11 @@ Select Bill Graham as the venue, then open **Venue 3D**. The board and map show 
 
 Drag a team onto its destination. You can also select it from the **Units** list, then tap the destination. Tapping a team ball changes its status.
 
-Fixed-post teams keep their operational status color and show a pin beside the ball. Teams on a meal break show a countdown above their ball. An overdue timer turns red and shows elapsed overdue time with a **+** prefix.
+Fixed-post teams keep their operational status color and show a pin beside the ball. Teams on a meal break show a countdown with their call sign. An overdue timer turns red and shows elapsed overdue time with a **+** prefix.
+
+The map keeps its compact floor layout and round status dots. Call signs use one font size. When a label needs to move to avoid a collision, a small callout encloses the call sign and meal timer together, with a connector to the unit dot. Labels that fit normally stay unboxed.
+
+Meal timers remain visible. Clock updates preserve the marker being selected or dragged. Long call signs use an ellipsis rather than smaller text; full names remain available in the unit list and selected-unit panel.
 
 Teams without a map post appear as balls in **Unassigned on map** beside the venue. Drag a ball onto a post, or select the team from **Units** and choose its destination. The tray scrolls independently and does not reduce the map's drawing area.
 
@@ -98,18 +112,21 @@ For standalone use, open `Event_EMS_Dispatch_Board.html` directly. Service worke
 | --- | --- |
 | `index.html` | Page markup, controls, and asset references. |
 | `board.css` | Responsive layouts, component styles, and SVG styles. |
+| `appearance.js` | Pre-paint display preference and synchronized Light/Night controls. |
 | `board.js` | State transitions, DOM rendering, drag handling, timers, and persistence. |
 | `Event_EMS_Dispatch_Board.html` | Generated HTML with embedded CSS, JavaScript, and SVG icon. |
 | `scripts/build-standalone.py` | Standalone HTML generator. |
 | `tests/venue-state.test.mjs` | State and interaction regression suite. |
 | `tests/dispatch-mode.test.mjs` | Full-screen lifecycle, map marker, countdown, and unassigned tray checks. |
+| `tests/map-labels.test.mjs` | Label collisions, conditional callout boxes, compact geometry, crowded posts, long call signs, clock growth, and callout actions. |
+| `tests/appearance.test.mjs` | Display preference, both control groups, blocked storage, and shift preservation checks. |
 | `tests/dom-fixture.mjs` | In-memory DOM and event fixture used by the suite. |
 | `sw.js`, `manifest.webmanifest` | Service worker caching and install metadata. |
 | `.github/workflows/static.yml` | GitHub Pages deployment workflow. |
 
 ### Build
 
-Edit the shared sources in `index.html`, `board.css`, and `board.js`, then regenerate the standalone artifact:
+Edit the shared sources in `index.html`, `board.css`, `appearance.js`, and `board.js`, then regenerate the standalone artifact:
 
 ```bash
 python3 scripts/build-standalone.py
@@ -124,9 +141,11 @@ Run the regression suite from the project root:
 ```bash
 node tests/venue-state.test.mjs
 node tests/dispatch-mode.test.mjs
+node tests/appearance.test.mjs
+node tests/map-labels.test.mjs
 ```
 
-The suites currently contain 87 checks for assignments, status transitions, drag events, full-screen lifecycle and fallback, meal countdowns, unassigned map units, persistence, backup compatibility, and Undo. They run with Node's built-in modules and an in-memory DOM, without launching a browser.
+The dispatch suites contain 87 checks for assignments, status transitions, drag events, full-screen lifecycle and fallback, meal countdowns, unassigned map units, persistence, backup compatibility, and Undo. Seven appearance checks cover the saved display preference, both control groups, unavailable storage, and shift preservation. Nine label and callout checks cover collision handling, long call signs, clock growth, conditional boxes, connector endpoints, compact dimensions, and callout actions. They run with Node's built-in modules and an in-memory DOM, without launching a browser.
 
 For UI changes, also verify responsive layout, keyboard interaction, native and pointer dragging, edge scrolling, and service worker behavior in a browser.
 
