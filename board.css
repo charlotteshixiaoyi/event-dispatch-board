@@ -297,12 +297,14 @@ h2 { font-size: 1rem; font-weight: 700; letter-spacing: -.025em; }
 .venue-unit-hit { fill: transparent; }
 .venue-ball-shadow { fill: #284f3830; pointer-events: none; }
 .venue-unit-ball { stroke: #fff; stroke-width: 1.5; }
-.venue-map-unit[data-fixed-post]:not([data-meal-break]) .venue-unit-ball { stroke: #87949c; stroke-width: 1.2; }
+.venue-fixed-pin { fill: #344e43; stroke: #fff; stroke-width: 2; paint-order: stroke; stroke-linejoin: round; pointer-events: none; }
 .venue-selection-ring { fill: none; stroke: var(--teal); stroke-width: 2px; opacity: 0; }
 .venue-map-unit.is-selected .venue-selection-ring, .venue-map-unit:focus-visible .venue-selection-ring, .venue-map-unit:hover .venue-selection-ring { opacity: 1; }
 .venue-map-unit:focus-visible { outline: 0; }
 .venue-marker-name { fill: #203c2c; font-family: system-ui, sans-serif; font-size: 16px; font-weight: 750; paint-order: stroke; stroke: #fff; stroke-width: 3px; stroke-linejoin: round; }
 .venue-map-unit[data-crowded] .venue-marker-name { font-size: 12px; }
+.venue-meal-countdown { fill: #526459; font-family: system-ui, sans-serif; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; paint-order: stroke; stroke: #fff; stroke-width: 3px; stroke-linejoin: round; }
+.venue-meal-countdown[data-overdue="true"] { fill: #a1273c; }
 .venue-map-footer { padding: 8px 12px; border-top: 1px solid #edf1ee; flex-shrink: 0; }
 .venue-legend { display: flex; flex-wrap: wrap; gap: 6px 12px; }
 .venue-legend span { display: inline-flex; align-items: center; gap: 5px; color: #79877d; font-size: .61rem; }
@@ -310,10 +312,16 @@ h2 { font-size: 1rem; font-weight: 700; letter-spacing: -.025em; }
 .venue-legend [data-status="onscene"]::before { background: #ce405b; }
 .venue-legend [data-status="transporting"]::before { background: #b27a1e; }
 .venue-legend [data-status="atclinic"]::before { background: #3b81c9; }
-.venue-legend [data-status="fixed"]::before { width: 7px; height: 7px; background: #b8c0c4; border: 1px solid #87949c; }
+.venue-legend [data-status="fixed"]::before { content: none; }
+.venue-legend [data-status="fixed"] svg { fill: #344e43; flex-shrink: 0; }
 .venue-legend [data-status="meal"]::before { background: #87958c; }
-.venue-sidebar { display: flex; flex-direction: column; gap: 10px; min-width: 0; min-height: 0; height: 100%; overflow: hidden; }
-.venue-unit-panel, .venue-inspector { min-width: 0; padding: 14px; border: 1px solid #d4dfd8; border-radius: 10px; background: #fff; }
+.venue-sidebar { display: flex; flex-direction: column; gap: 10px; min-width: 0; min-height: 0; height: 100%; overflow: auto; }
+.venue-unit-panel, .venue-inspector, .venue-unassigned-panel { min-width: 0; padding: 14px; border: 1px solid #d4dfd8; border-radius: 10px; background: #fff; }
+.venue-unassigned-panel { display: flex; flex-direction: column; flex: 0 0 auto; min-height: 110px; max-height: 36%; }
+.venue-unassigned-panel .venue-sidebar-heading { margin-bottom: 3px; }
+.venue-unassigned-hint { color: var(--muted); font-size: .72rem; }
+.venue-unassigned-tray { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.venue-unassigned-tray > svg { display: block; width: 100%; height: auto; user-select: none; -webkit-user-select: none; }
 .venue-unit-panel { display: flex; flex-direction: column; flex: 1; min-height: 160px; overflow: hidden; }
 .venue-sidebar-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
 .venue-sidebar h3 { font-size: .9rem; font-weight: 700; overflow-wrap: anywhere; }
@@ -324,11 +332,8 @@ h2 { font-size: 1rem; font-weight: 700; letter-spacing: -.025em; }
 .venue-unit[data-status="onscene"] { --unit-line: #ce405b; }
 .venue-unit[data-status="transporting"] { --unit-line: #b27a1e; }
 .venue-unit[data-status="atclinic"] { --unit-line: #3b81c9; }
-.venue-unit[data-fixed-post] { --unit-line: #aab8ae; background: #fff; }
-.venue-unit[data-fixed-post]:not([data-meal-break]) .venue-unit-state { color: #5f7064; }
 .venue-unit[data-meal-break] { --unit-line: #87958c; background: #f1f4f2; }
 .venue-unit[aria-pressed="true"] { border-color: #168064; background: #f0f8f3; }
-.venue-unit[data-fixed-post][aria-pressed="true"] { background: #fff; }
 .venue-unit[data-meal-break][aria-pressed="true"] { background: #e9edeb; }
 .venue-unit:hover { border-color: var(--unit-line); }
 .venue-unit.dragging { opacity: .4; }
@@ -367,6 +372,8 @@ h2 { font-size: 1rem; font-weight: 700; letter-spacing: -.025em; }
     .venue-map-card { height: max(320px, calc(100dvh - 322px)); }
     .venue-team-picker { display: block; width: 140px; }
     .venue-sidebar { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); height: auto; overflow: visible; }
+    .venue-unassigned-panel { max-height: 250px; }
+    .venue-sidebar:has(.venue-unassigned-panel:not([hidden])) .venue-inspector { grid-column: 1 / -1; }
     .venue-unit-panel { height: 250px; }
     .venue-inspector { max-height: none; align-self: start; }
 }
@@ -397,4 +404,48 @@ h2 { font-size: 1rem; font-weight: 700; letter-spacing: -.025em; }
 }
 @media (max-width: 600px) {
     .field-locations { grid-template-columns: minmax(0, 1fr); }
+}
+
+.dispatch-mode-controls { display: flex; align-items: center; flex-shrink: 0; gap: 12px; }
+.dispatch-mode-status { display: flex; align-items: center; gap: 12px; }
+.dispatch-mode-level { display: flex; align-items: center; gap: 8px; border-radius: 6px; padding: 8px 10px; background: #e2f3e9; color: #145c3e; font-size: .875rem; }
+.dispatch-mode-level[data-empty="true"] { background: #fbefda; color: #805008; }
+.dispatch-mode-level strong { font-size: 1.1rem; font-variant-numeric: tabular-nums; }
+.dispatch-mode-time { display: flex; align-items: baseline; gap: 5px; font-size: .875rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dispatch-mode-time span, .dispatch-mode-hint { color: var(--muted); font-size: .75rem; }
+.dispatch-mode-save { display: none; }
+body.is-dispatch-mode { overflow: hidden; }
+.is-dispatch-mode :is(.masthead, .overview, .action-bar, .view-tabs, .team-roster, .activity-layout, .board-tools, .app-footer) { display: none; }
+.is-dispatch-mode main.wrap { width: 100%; max-width: none; height: 100vh; height: 100dvh; padding: 8px; }
+.is-dispatch-mode :is(#venue-panel, #venue-content) { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.is-dispatch-mode .venue-heading { flex-shrink: 0; min-height: 44px; margin-bottom: 8px; }
+.is-dispatch-mode .venue-heading h2 { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.is-dispatch-mode .venue-layout { display: grid; grid-template-columns: minmax(0, 1fr) clamp(230px, 24vw, 320px); flex: 1; min-height: 0; height: auto; max-height: none; }
+.is-dispatch-mode .venue-map-card { height: 100%; min-height: 0; }
+.is-dispatch-mode .venue-sidebar { display: flex; flex-direction: column; min-height: 0; height: 100%; overflow: auto; }
+.is-dispatch-mode .venue-unit-panel { height: auto; min-height: 210px; }
+.is-dispatch-mode .venue-inspector { max-height: 65%; align-self: stretch; }
+.is-dispatch-mode .venue-unassigned-panel { max-height: 36%; }
+.is-dispatch-mode .pit-side-control { display: none; }
+.is-dispatch-mode .venue-sidebar h3 { font-size: 1rem; }
+.is-dispatch-mode :is(.venue-search, .venue-filter, .venue-inspector .status-select, .venue-inspector .location-select) { min-height: 40px; font-size: .875rem; }
+.is-dispatch-mode .venue-unit-name { font-size: .9rem; }
+.is-dispatch-mode :is(.venue-unit-state, .venue-unit-post, .venue-legend span) { font-size: .75rem; }
+.is-dispatch-mode .dispatch-mode-save[data-error="true"] { display: block; flex-shrink: 0; margin-bottom: 8px; padding: 8px 12px; border-radius: 6px; background: #fce8ec; color: #a1273c; font-size: .875rem; }
+@media (max-width: 1100px) {
+    .dispatch-mode-hint { display: none; }
+}
+@media (max-width: 700px) {
+    .venue-heading { flex-wrap: wrap; }
+    .dispatch-mode-controls { width: 100%; justify-content: flex-end; }
+    .is-dispatch-mode .venue-heading h2 { display: none; }
+    .is-dispatch-mode .dispatch-mode-controls { justify-content: space-between; gap: 8px; }
+    .is-dispatch-mode .dispatch-mode-status { gap: 8px; }
+    .is-dispatch-mode .venue-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(150px, 34%); gap: 8px; }
+    .is-dispatch-mode .venue-sidebar { min-height: 0; }
+    .is-dispatch-mode .venue-inspector { max-height: none; }
+    .dispatch-mode-controls .secondary-btn { padding-inline: 10px; }
+}
+@media (max-width: 420px) {
+    .dispatch-mode-time { display: none; }
 }

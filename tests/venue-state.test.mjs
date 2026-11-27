@@ -245,8 +245,8 @@ test('every placed team has a ball with its name above it, including crowded pos
  for(let i=0;i<9;i++)run(`teams.push({id:'textra${i}',name:'TEAM-${i}',status:'roaming',zone:'field-zone',location:'venue-1-grove',statusSince:Date.now()})`);
  run('refresh()');
  const visible=state().teams.filter(team=>team.zone==='clinic-zone'||(team.location.startsWith('venue-')&&!team.location.startsWith('venue-3-')));
- assert.equal(document.querySelectorAll('.venue-unit-ball').length,visible.length);
- for(const marker of document.querySelectorAll('.venue-map-unit')){
+ assert.equal(el('venue-canvas').querySelectorAll('.venue-unit-ball').length,visible.length);
+ for(const marker of el('venue-canvas').querySelectorAll('.venue-map-unit')){
   assert.equal(marker.querySelector('rect'),null);
   assert.ok(Number(marker.querySelector('text').getAttribute('y'))<Number(marker.querySelector('.venue-unit-ball').getAttribute('cy')));
  }
@@ -282,24 +282,24 @@ test('Pit is inside the first-floor auditorium at performer stage left',()=>{
  const polk=document.querySelector('.venue-destination[data-venue-post="venue-1-polk"] polygon');
  assert.ok(midpoint(pit)<midpoint(polk));
 });
-test('all fixed-post teams are marked pale and excluded from dispatch availability',()=>{
+test('all fixed-post teams have pins, retain status colors, and are excluded from dispatch availability',()=>{
  run("moveTeam('t2','pit-table-service')");
  assert.equal(el('level-number').textContent,'0');
  assert.equal(el('t1').dataset.fixedPost,'true');
  assert.equal(el('t2').dataset.fixedPost,'true');
  assert.equal(document.querySelector('[data-move-team="t1"]').dataset.fixedPost,'true');
- assert.equal(document.querySelector('[data-map-team="t1"] .venue-unit-ball').getAttribute('fill'),'url(#venue-ball-fixed)');
+ assert.equal(document.querySelector('[data-map-team="t1"] .venue-unit-ball').getAttribute('fill'),`url(#venue-ball-${state().teams.find(team=>team.id==='t1').status})`);
  assert.equal(el('location-t1').value,'venue-1-pit');
  assert.ok(document.querySelector('[data-location="pit-table-service"] .location-count').textContent.includes('2 units'));
  assert.equal(run('venuePostForTeam(teams[1])'),undefined);
 });
-test('a fixed team on meal break uses the gray meal marker and returns to fixed-post gray afterward',()=>{
+test('a fixed team on meal break uses the meal marker and returns to its status color afterward',()=>{
  run("toggleMealBreak('t1')");
  assert.equal(document.querySelector('[data-map-team="t1"] .venue-unit-ball').getAttribute('fill'),'url(#venue-ball-meal)');
  assert.equal(document.querySelector('[data-map-team="t1"]').dataset.mealBreak,'true');
  assert.equal(el('t1').dataset.mealBreak,'true');
  run("toggleMealBreak('t1')");
- assert.equal(document.querySelector('[data-map-team="t1"] .venue-unit-ball').getAttribute('fill'),'url(#venue-ball-fixed)');
+ assert.equal(document.querySelector('[data-map-team="t1"] .venue-unit-ball').getAttribute('fill'),`url(#venue-ball-${state().teams.find(team=>team.id==='t1').status})`);
  assert.equal(el('t1').dataset.mealBreak,undefined);
 });
 test('tapping map teams cycles status just like the board, including Medical and Undo',()=>{
@@ -321,7 +321,7 @@ test('tapping map teams cycles status just like the board, including Medical and
    assert.equal(el('t1').dataset.fixedPost,undefined);
   }else{
    assert.equal(document.querySelector('[data-map-team="t1"]').closest('[data-venue-post]').dataset.venuePost,'venue-1-pit');
-   assert.equal(document.querySelector('[data-map-team="t1"] .venue-unit-ball').getAttribute('fill'),'url(#venue-ball-fixed)');
+   assert.equal(document.querySelector('[data-map-team="t1"] .venue-unit-ball').getAttribute('fill'),`url(#venue-ball-${state().teams.find(team=>team.id==='t1').status})`);
   }
  }
  assert.equal(state().handoffLog.length,original.handoffLog.length+6);
@@ -481,7 +481,7 @@ test('Table Service is a fixed-post dropdown option and teams stay nested under 
  assert.ok(group.contains(el('t1')));
  assert.equal(document.querySelectorAll('.field-location[data-location="venue-1-table-service"]').length,0);
  assert.equal(el('t1').dataset.fixedPost,'true');
- assert.equal(document.querySelector('[data-map-team="t1"] .venue-unit-ball').getAttribute('fill'),'url(#venue-ball-fixed)');
+ assert.equal(document.querySelector('[data-map-team="t1"] .venue-unit-ball').getAttribute('fill'),`url(#venue-ball-${state().teams.find(team=>team.id==='t1').status})`);
  assert.equal(el('level-number').textContent,'1');
 });
 test('Table Service is on first-floor Grove at the end nearest Larkin',()=>{
@@ -519,11 +519,11 @@ test('Table Service supports map drops, Undo, backups, status taps, and meal-bre
  document.querySelector('[data-map-team="t1"]').click();
  assert.equal(state().teams[0].status,'onscene');
  assert.equal(state().teams[0].location,'venue-1-table-service');
- assert.equal(document.querySelector('[data-map-team="t1"] .venue-unit-ball').getAttribute('fill'),'url(#venue-ball-fixed)');
+ assert.equal(document.querySelector('[data-map-team="t1"] .venue-unit-ball').getAttribute('fill'),`url(#venue-ball-${state().teams.find(team=>team.id==='t1').status})`);
  run("toggleMealBreak('t1')");
  assert.equal(document.querySelector('[data-map-team="t1"] .venue-unit-ball').getAttribute('fill'),'url(#venue-ball-meal)');
  run("toggleMealBreak('t1')");
- assert.equal(document.querySelector('[data-map-team="t1"] .venue-unit-ball').getAttribute('fill'),'url(#venue-ball-fixed)');
+ assert.equal(document.querySelector('[data-map-team="t1"] .venue-unit-ball').getAttribute('fill'),`url(#venue-ball-${state().teams.find(team=>team.id==='t1').status})`);
 });
 test('Larkin is left and Polk is right on every floor, including assigned units and Main Medical',()=>{
  const before=state();
@@ -566,7 +566,7 @@ test('map selector moves the Pit area and every Pit team to stage right near Lar
  assert.deepEqual(state().teams,before.teams);
  assert.deepEqual(state().handoffLog,before.handoffLog);
  assert.equal(state().notes,before.notes);
- assert.equal(document.querySelector('[data-map-team="tp1"] .venue-unit-ball').getAttribute('fill'),'url(#venue-ball-fixed)');
+ assert.equal(document.querySelector('[data-map-team="tp1"] .venue-unit-ball').getAttribute('fill'),'url(#venue-ball-onscene)');
  assert.equal(document.querySelector('[data-map-team="tp2"] .venue-unit-ball').getAttribute('fill'),'url(#venue-ball-meal)');
  assert.ok(document.querySelector('.venue-destination[data-venue-post="venue-1-pit"] polygon').getAttribute('aria-label').includes('stage right inside 1st floor auditorium, near Larkin'));
  for(const side of ['stage-left','stage-right'])for(const angle of [-30,18,42]){
@@ -953,5 +953,20 @@ test('automatic map spots remain stable through status changes, moves, Undo and 
  run("moveTeam('tstable0','venue-2-larkin')");assert.equal(state().teams[0].location,'venue-2-larkin');assertPackedPost('venue-2-polk',3);
  run('undoChange()');assert.deepEqual(state(),before);assert.deepEqual(positions(),spots);
  run('replaceBoard(readBoard(JSON.parse(serializeBoard())))');assert.deepEqual(state(),before);assert.deepEqual(positions(),spots);
+});
+test('crowded meal-break markers keep their balls inside posts and their clocks inside the map',()=>{
+ const groups=[['venue-1-pit',4],['venue-1-table-service',3],['venue-1-grove',6],['venue-2-roaming',8],['clinic-zone',4]];
+ const fixture={teams:groups.flatMap(([location,count],group)=>Array.from({length:count},(_,i)=>({id:`tmealpack${group}_${i}`,name:`MEAL-${group}-${i}`,status:location==='clinic-zone'?'atclinic':'roaming',location,mealBreak:{startedAt:Date.now()-60000,returnedAt:null}}))),locations:[],venue:'bill-graham'};
+ run(`replaceBoard(readBoard(${JSON.stringify(fixture)}));venueFloor='all';setView('venue')`);
+ for(const angle of [-30,0,18,42]){
+  run(`venueAngle=${angle};renderVenue()`);
+  for(const [post,count] of groups)assertPackedPost(post,count);
+  const height=Number(el('venue-canvas').querySelector('svg').getAttribute('viewBox').split(' ')[3]);
+  assert.equal(el('venue-canvas').querySelectorAll('.venue-meal-countdown').length,25);
+  for(const label of el('venue-canvas').querySelectorAll('.venue-marker-name, .venue-meal-countdown')){
+   const y=Number(label.getAttribute('y'));
+   assert.ok(y>=12&&y<height-2,'meal names and countdowns must not be clipped');
+  }
+ }
 });
 console.log(`${passed} checks passed.`);

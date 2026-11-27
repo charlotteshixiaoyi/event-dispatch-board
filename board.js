@@ -38,6 +38,10 @@ let venueBoardPosts = [...defaultVenueBoardPosts];
 let additionalVenueLocations = [];
 const mainMedicalPost = { id: 'clinic-zone', name: 'Main Medical · 4th floor · Polk', level: '4', side: 'Polk' };
 let activeView = 'dispatch';
+let dispatchModeActive = false;
+let dispatchModeFullscreenOwned = false;
+let dispatchModeFullscreenPending = false;
+let dispatchModeScroll = null;
 let selectedVenueTeam = null;
 let callActionTeam = null;
 let callActionView = 'dispatch';
@@ -208,14 +212,18 @@ try {
 
 function validLocation(id) { return fieldLocations().some(location => location.id === id); }
 function saveBoard() {
-    const indicator = document.getElementById('save-indicator');
+    let error = false;
+    let message = 'Saved';
     try {
         localStorage.setItem(storageKey, serializeBoard());
-        indicator.dataset.error = 'false';
-        indicator.textContent = 'Saved';
     } catch {
-        indicator.dataset.error = 'true';
-        indicator.textContent = 'Changes could not be saved. Download a backup before closing.';
+        error = true;
+        message = 'Changes could not be saved. Download a backup before closing.';
+    }
+    for (const id of ['save-indicator', 'dispatch-mode-save']) {
+        const indicator = document.getElementById(id);
+        indicator.dataset.error = String(error);
+        indicator.textContent = message;
     }
 }
 function newId(prefix) { return prefix + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 9); }
@@ -247,7 +255,10 @@ function rememberChange(snapshot = JSON.stringify(boardState())) {
     undoHistory.push({ snapshot, log: handoffLog, logLength: handoffLog.length });
     if (undoHistory.length > 100) undoHistory.shift();
     notesCheckpoint = null;
-    document.getElementById('undo-button').disabled = false;
+    updateUndoControls();
+}
+function updateUndoControls() {
+    for (const id of ['undo-button', 'dispatch-mode-undo']) document.getElementById(id).disabled = undoHistory.length === 0;
 }
 function undoChange() {
     if (!undoHistory.length) return;
@@ -400,13 +411,25 @@ function renderTimestamps() {
     }).join('');
 }
 
+function mealBreakTiming(deadline, now = Date.now()) {
+    const remaining = deadline - now;
+    const seconds = remaining > 0 ? Math.ceil(remaining / 1000) : Math.floor(-remaining / 1000);
+    const timer = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+    return { overdue: remaining <= 0, timer, description: remaining > 0 ? `${timer} left` : `Overdue · ${timer}` };
+}
+
 function updateMealBreakTimers(now) {
     document.querySelectorAll('.meal-break-row[data-deadline]').forEach(row => {
-        const remaining = Number(row.dataset.deadline) - now;
-        const seconds = remaining > 0 ? Math.ceil(remaining / 1000) : Math.floor(-remaining / 1000);
-        const timer = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
-        row.dataset.overdue = String(remaining <= 0);
-        row.querySelector('.meal-break-time').textContent = remaining > 0 ? `${timer} left` : `Overdue · ${timer}`;
+        const timing = mealBreakTiming(Number(row.dataset.deadline), now);
+        row.dataset.overdue = String(timing.overdue);
+        row.querySelector('.meal-break-time').textContent = timing.description;
+    });
+    // Ticking must not replace a focused or dragged marker.
+    document.querySelectorAll('.venue-meal-countdown[data-deadline]').forEach(timer => {
+        const timing = mealBreakTiming(Number(timer.dataset.deadline), now);
+        timer.dataset.overdue = String(timing.overdue);
+        timer.textContent = `${timing.overdue ? '+' : ''}${timing.timer}`;
+        timer.setAttribute('aria-label', `Meal break: ${timing.description}`);
     });
 }
 
@@ -646,7 +669,7 @@ function renderBoard() {
     }
     document.getElementById('field-count').textContent = `${fieldCount} unit${fieldCount !== 1 ? 's' : ''}`;
     document.getElementById('clinic-count').textContent = `${clinicCount} unit${clinicCount !== 1 ? 's' : ''}`;
-    document.getElementById('undo-button').disabled = undoHistory.length === 0;
+    updateUndoControls();
 }
 function refresh() { hideCallActions(); renderBoard(); renderVenue(); saveBoard(); }
 function addTeam() {
@@ -859,7 +882,77 @@ function postOptions(team) {
     return standard + (assigned ? `<optgroup label="Current post">${option(assigned)}</optgroup>` : '');
 }
 
+function setDispatchMode(active, restoreFocus = true) {
+    dispatchModeActive = active;
+    document.body.classList[active ? 'add' : 'remove']('is-dispatch-mode');
+    document.getElementById('dispatch-mode-status').hidden = !active;
+    const button = document.getElementById('dispatch-mode-toggle');
+    button.setAttribute('aria-pressed', String(active));
+    button.textContent = active ? 'Exit full-screen' : 'Full-screen dispatch';
+    if (!active) {
+        hideCallActions();
+        finishVenueDrag();
+        if (dispatchModeScroll) window.scrollTo?.({ left: dispatchModeScroll.x, top: dispatchModeScroll.y, behavior: 'instant' });
+        dispatchModeScroll = null;
+        if (restoreFocus && activeView === 'venue' && selectedVenue === 'bill-graham') button.focus({ preventScroll: true });
+    }
+}
+
+async function releaseDispatchFullscreen() {
+    // Leave only a fullscreen session opened by this feature.
+    if (!dispatchModeFullscreenOwned || document.fullscreenElement !== document.documentElement || typeof document.exitFullscreen !== 'function') return;
+    try {
+        await document.exitFullscreen();
+    } catch {
+        dispatchModeFullscreenOwned = false;
+    }
+    if (!document.fullscreenElement) dispatchModeFullscreenOwned = false;
+}
+
+async function enterDispatchMode() {
+    if (dispatchModeActive || selectedVenue !== 'bill-graham' || activeView !== 'venue') return;
+    dispatchModeScroll = { x: window.scrollX || 0, y: window.scrollY || 0 };
+    hideCallActions();
+    finishVenueDrag();
+    setDispatchMode(true);
+    venueMessage('Full-screen dispatch mode. Press Escape or choose Exit full-screen to return.');
+    const page = document.documentElement;
+    if (dispatchModeFullscreenPending || document.fullscreenElement || typeof page?.requestFullscreen !== 'function') return;
+    dispatchModeFullscreenPending = true;
+    dispatchModeFullscreenOwned = true;
+    try {
+        await page.requestFullscreen();
+    } catch {
+        // The same focused layout fills the browser window when native fullscreen is unavailable.
+        dispatchModeFullscreenOwned = false;
+    } finally {
+        dispatchModeFullscreenPending = false;
+    }
+    // The exit button can be used while the browser is still entering fullscreen.
+    if (!dispatchModeActive) await releaseDispatchFullscreen();
+}
+
+async function exitDispatchMode(restoreFocus = true) {
+    if (dispatchModeActive) setDispatchMode(false, restoreFocus);
+    await releaseDispatchFullscreen();
+}
+
+function initializeDispatchMode() {
+    document.getElementById('dispatch-mode-toggle').addEventListener('click', () => {
+        if (dispatchModeActive) exitDispatchMode();
+        else enterDispatchMode();
+    });
+    document.getElementById('dispatch-mode-undo').addEventListener('click', undoChange);
+    document.addEventListener('fullscreenchange', () => {
+        if (!document.fullscreenElement && dispatchModeFullscreenOwned) {
+            dispatchModeFullscreenOwned = false;
+            if (dispatchModeActive) setDispatchMode(false);
+        }
+    });
+}
+
 function setView(view, focus = false) {
+    if (view !== 'venue' && dispatchModeActive) exitDispatchMode(false);
     hideCallActions();
     activeView = view;
     document.body.classList[view === 'venue' ? 'add' : 'remove']('is-venue-view');
@@ -913,7 +1006,13 @@ function renderVenue() {
     const billGraham = selectedVenue === 'bill-graham';
     document.getElementById('venue-content').hidden = !billGraham;
     document.getElementById('venue-no-view').hidden = billGraham;
-    if (!billGraham) { document.getElementById('venue-canvas').replaceChildren(); return; }
+    if (!billGraham) {
+        if (dispatchModeActive) exitDispatchMode(false);
+        document.getElementById('venue-canvas').replaceChildren();
+        document.getElementById('venue-unassigned-tray').replaceChildren();
+        document.getElementById('venue-unassigned-panel').hidden = true;
+        return;
+    }
     if (!teams.some(team => team.id === selectedVenueTeam)) selectedVenueTeam = null;
     const placed = teams.filter(team => venuePostForTeam(team)).length;
     document.getElementById('venue-unit-count').textContent = `${placed}/${teams.length} placed`;
@@ -965,6 +1064,55 @@ function renderVenueInspector() {
         : team.mealBreak ? `Meal break completed · ${pacificFormatter.format(team.mealBreak.returnedAt)}` : '';
 }
 
+function venueBallGradients(prefix) {
+    const colors = {
+        roaming: ['#b5efd1', '#278159', '#145c3e'], onscene: ['#ffbfc9', '#ce405b', '#96273e'],
+        transporting: ['#ffe1a8', '#b27a1e', '#805008'], atclinic: ['#b6dcff', '#3b81c9', '#245993'],
+        meal: ['#e0e6e2', '#87958c', '#5c6a61']
+    };
+    return Object.entries(colors).map(([status, stops]) => `<radialGradient id="${prefix}-${status}" cx="32%" cy="25%" r="75%"><stop offset="0" stop-color="${stops[0]}"/><stop offset=".55" stop-color="${stops[1]}"/><stop offset="1" stop-color="${stops[2]}"/></radialGradient>`).join('');
+}
+
+function venueTeamMarker(team, post, x, markerY, labelWidth = 0, gradientPrefix = 'venue-ball') {
+    const limit = labelWidth ? 10 : 14;
+    const label = team.name.length > limit ? `${team.name.slice(0, limit - 1)}…` : team.name;
+    const fitLabel = labelWidth && label.length * 8 > labelWidth ? ` textLength="${labelWidth}" lengthAdjust="spacingAndGlyphs"` : '';
+    const onBreak = isOnMealBreak(team);
+    const fixed = isFixedPost(team);
+    const status = onBreak ? 'meal' : team.status;
+    let countdown = '';
+    if (onBreak) {
+        const deadline = team.mealBreak.startedAt + mealBreakDuration;
+        const timing = mealBreakTiming(deadline);
+        const fitTimer = labelWidth && (timing.timer.length + 1) * 8 > labelWidth ? ` textLength="${labelWidth}" lengthAdjust="spacingAndGlyphs"` : '';
+        countdown = `<text x="${x}" y="${markerY - 16}" text-anchor="middle" class="venue-meal-countdown" data-deadline="${deadline}" data-overdue="${timing.overdue}" role="timer" aria-live="off" aria-label="Meal break: ${timing.description}"${fitTimer}>${timing.overdue ? '+' : ''}${timing.timer}</text>`;
+    }
+    const pin = fixed ? `<path class="venue-fixed-pin" d="M-4-5H4L2-1L5 2V3H1V8H-1V3H-5V2L-2-1Z" transform="translate(${x + 11} ${markerY - 8})" aria-hidden="true"/>` : '';
+    return `<g class="venue-map-unit${team.id === selectedVenueTeam ? ' is-selected' : ''}" data-map-team="${team.id}" data-status="${team.status}"${labelWidth ? ' data-crowded="true"' : ''}${fixed ? ' data-fixed-post="true"' : ''}${onBreak ? ' data-meal-break="true"' : ''}${team.status === 'onscene' ? ' aria-haspopup="dialog" aria-expanded="false"' : ''} role="button" tabindex="0" aria-label="Change status for ${escapeHTML(team.name)}, ${escapeHTML(post.name)}, ${statusNames[team.status]}${fixed ? ', fixed post' : ''}${onBreak ? ', on meal break' : ''}">
+        <title>${escapeHTML(team.name)} · ${escapeHTML(post.name)} · ${statusNames[team.status]}${fixed ? ' · Fixed post' : ''}${onBreak ? ' · On meal break' : ''}</title>
+        <circle class="venue-unit-hit" cx="${x}" cy="${markerY - 5}" r="23"/>
+        <ellipse class="venue-ball-shadow" cx="${x + 1}" cy="${markerY + 9}" rx="8" ry="2.5"/>
+        <circle class="venue-selection-ring" cx="${x}" cy="${markerY}" r="13"/>
+        <circle class="venue-unit-ball" cx="${x}" cy="${markerY}" r="8" fill="url(#${gradientPrefix}-${status})"/>
+        ${pin}
+        <text x="${x}" y="${markerY - (onBreak ? 32 : 16)}" text-anchor="middle" class="venue-marker-name"${fitLabel}>${escapeHTML(label)}</text>
+        ${countdown}
+    </g>`;
+}
+
+function renderUnassignedVenueTeams() {
+    const unassigned = teams.filter(team => !venuePostForTeam(team))
+        .sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true, sensitivity: 'base' }));
+    const panel = document.getElementById('venue-unassigned-panel');
+    const tray = document.getElementById('venue-unassigned-tray');
+    panel.hidden = unassigned.length === 0;
+    document.getElementById('venue-unassigned-count').textContent = String(unassigned.length);
+    if (!unassigned.length) { tray.replaceChildren(); return; }
+    // The independent side tray never changes the venue map's drawing dimensions.
+    const height = Math.ceil(unassigned.length / 2) * 76;
+    tray.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 224 ${height}" width="224" height="${height}" role="group" aria-label="Units awaiting a map post"><defs>${venueBallGradients('venue-unassigned-ball')}</defs>${unassigned.map((team, slot) => venueTeamMarker(team, { name: teamLocationName(team) }, 56 + slot % 2 * 112, 54 + Math.floor(slot / 2) * 76, 96, 'venue-unassigned-ball')).join('')}</svg>`;
+}
+
 function renderVenueMap() {
     if (callActionView === 'venue') hideCallActions();
     if (selectedVenue !== 'bill-graham') return;
@@ -1005,20 +1153,22 @@ function renderVenueMap() {
     };
     const packPost = shape => {
         const members = atPost(shape.id);
+        const markerRowHeight = members.some(isOnMealBreak) ? 60 : rowHeight;
         const post = shape.id === 'clinic-zone' ? mainMedicalPost : venuePosts.find(post => post.id === shape.id);
         const [minX, minZ] = shape.coords[0];
         const [maxX, maxZ] = shape.coords[2];
         const paddingX = Math.max(18, 12 * Math.hypot(Math.sin(angle), .3 * Math.cos(angle)) / .3);
         const depth = maxZ - minZ;
         const usableWidth = maxX - minX - paddingX * 2;
-        const maxColumns = Math.min(Math.max(1, members.length), Math.max(1, Math.floor(usableWidth * Math.cos(angle) / 28) + 1));
+        const minSpacing = members.some(isOnMealBreak) ? 40 : 28;
+        const maxColumns = Math.min(Math.max(1, members.length), Math.max(1, Math.floor(usableWidth * Math.cos(angle) / minSpacing) + 1));
         let best;
         // Try the available columns before requesting more space for the post.
         for (let cols = 1; cols <= maxColumns; cols++) {
             const rows = Math.max(1, Math.ceil(members.length / cols));
             const spacingX = usableWidth / Math.max(1, cols - 1);
-            const stagger = cols > 1 && spacingX * Math.cos(angle) < 60 ? 20 : 0;
-            const offset = ((rows - 1) * rowHeight + (cols - 1) * stagger) / 2;
+            const stagger = cols > 1 && spacingX * Math.cos(angle) < 60 ? (markerRowHeight > rowHeight ? 36 : 20) : 0;
+            const offset = ((rows - 1) * markerRowHeight + (cols - 1) * stagger) / 2;
             // Solve for the depth that keeps the outer balls inside the angled edges.
             const a = depth / 2 * Math.cos(angle);
             const b = depth / 2 * .3 * Math.sin(angle) ** 2 - offset * Math.cos(angle) - markerPadding * edgeScale;
@@ -1028,10 +1178,10 @@ function renderVenueMap() {
             const labelWidth = cols > 1 ? Math.max(36, Math.min(96, spacingX * Math.cos(angle) - 6)) : 96;
             if (!best || stretch <= best.stretch + .001) best = { cols, rows, spacingX, stagger, stretch, labelWidth };
         }
-        return { shape, members, post, minX, minZ, maxX, maxZ, ...best, front: minZ >= 62 };
+        return { shape, members, post, minX, minZ, maxX, maxZ, ...best, rowHeight: markerRowHeight, front: minZ >= 62 };
     };
     const markerSpots = (packing, floorStretch, frontStretch) => {
-        const { shape, members, cols, rows, minX, minZ, maxX, maxZ, spacingX, stagger, front } = packing;
+        const { shape, members, cols, rows, minX, minZ, maxX, maxZ, spacingX, stagger, front, rowHeight } = packing;
         const depthScale = .3 * Math.cos(angle) + floorStretch / 220 + (front ? frontStretch / 48 : 0);
         return members.map((team, slot) => {
             if (members.length === 1) return [shape.x, shape.z];
@@ -1050,12 +1200,13 @@ function renderVenueMap() {
         const frontStretch = Math.max(0, ...posts.filter(post => post.front)
             .map(post => post.stretch > floorStretch + .001 ? (post.stretch - floorStretch) * (post.maxZ - post.minZ) / 220 : 0));
         const band = Math.max((threeFloorView ? slabDepth * 2 + 20 : 154) + floorStretch + frontStretch,
-            (threeFloorView ? 90 : 110) + Math.max(0, ...posts.map(post => post.rows)) * rowHeight);
+            (threeFloorView ? 90 : 110) + Math.max(0, ...posts.map(post => post.rows * post.rowHeight)));
         let y = cursor + (threeFloorView ? slabDepth + 12 : 80);
         const top = Math.min(Infinity, ...posts.flatMap(post => markerSpots(post, floorStretch, frontStretch)
             .map(([x, z]) => y + (x * Math.sin(angle) + z * Math.cos(angle)) * .3
                 + floorStretch * (z + 110) / 220 + frontStretch * Math.max(0, (z - 62) / 48)
-                - (post.shape.id === 'clinic-zone' || post.shape.side === 'Pit' ? 49 : 28))));
+                - (post.shape.id === 'clinic-zone' || post.shape.side === 'Pit' ? 49 : 28)
+                - (post.members.some(isOnMealBreak) ? 16 : 0))));
         const topPadding = Math.max(0, -top);
         y += topPadding;
         const item = { level, y, band, floorStretch, frontStretch, posts };
@@ -1063,13 +1214,14 @@ function renderVenueMap() {
         return item;
     });
     const outsideMembers = atPost('venue-outside');
+    const outsideRowHeight = outsideMembers.some(isOnMealBreak) ? 60 : rowHeight;
     const outsideVisible = additionalVenueLocations.includes('outside');
     const outsideColumns = Math.min(3, Math.max(1, outsideMembers.length));
     const outsideY = cursor + 10;
     const outsideRows = Math.max(1, Math.ceil(outsideMembers.length / outsideColumns));
     const outsideRx = 170;
     const outsideHalfWidth = (outsideColumns - 1) * 44 + 24;
-    const outsideRy = Math.max(48, Math.ceil(((outsideRows - 1) * rowHeight / 2 + 30)
+    const outsideRy = Math.max(48, Math.ceil(((outsideRows - 1) * outsideRowHeight / 2 + 30)
         / Math.sqrt(1 - (outsideHalfWidth / outsideRx) ** 2)));
     const outsideCenterY = outsideY + outsideRy;
     const height = Math.max(focused ? 240 : 0, outsideVisible ? outsideY + outsideRy * 2 + 20 : cursor + 12);
@@ -1079,19 +1231,7 @@ function renderVenueMap() {
         point[1] += stretch * (z + 110) / 220 + frontStretch * Math.max(0, (z - 62) / 48);
         return point.map(n => n.toFixed(1)).join(',');
     }).join(' ');
-    const ballColors = {
-        roaming: ['#b5efd1', '#278159', '#145c3e'], onscene: ['#ffbfc9', '#ce405b', '#96273e'],
-        transporting: ['#ffe1a8', '#b27a1e', '#805008'], atclinic: ['#b6dcff', '#3b81c9', '#245993'],
-        meal: ['#e0e6e2', '#87958c', '#5c6a61'], fixed: ['#eceff0', '#b8c0c4', '#909ba1']
-    };
-    const gradients = Object.entries(ballColors).map(([status, colors]) => `<radialGradient id="venue-ball-${status}" cx="32%" cy="25%" r="75%"><stop offset="0" stop-color="${colors[0]}"/><stop offset=".55" stop-color="${colors[1]}"/><stop offset="1" stop-color="${colors[2]}"/></radialGradient>`).join('');
-    const teamMarker = (team, post, x, markerY, labelWidth = 0) => {
-        const limit = labelWidth ? 10 : 14;
-        const label = team.name.length > limit ? `${team.name.slice(0, limit - 1)}…` : team.name;
-        const fitLabel = labelWidth && label.length * 8 > labelWidth ? ` textLength="${labelWidth}" lengthAdjust="spacingAndGlyphs"` : '';
-        const status = isOnMealBreak(team) ? 'meal' : isFixedPost(team) ? 'fixed' : team.status;
-        return `<g class="venue-map-unit${team.id === selectedVenueTeam ? ' is-selected' : ''}" data-map-team="${team.id}" data-status="${team.status}"${labelWidth ? ' data-crowded="true"' : ''}${isFixedPost(team) ? ' data-fixed-post="true"' : ''}${isOnMealBreak(team) ? ' data-meal-break="true"' : ''}${team.status === 'onscene' ? ' aria-haspopup="dialog" aria-expanded="false"' : ''} role="button" tabindex="0" aria-label="Change status for ${escapeHTML(team.name)}, ${escapeHTML(post.name)}, ${statusNames[team.status]}${isOnMealBreak(team) ? ', on meal break' : ''}"><title>${escapeHTML(team.name)} · ${escapeHTML(post.name)} · ${statusNames[team.status]}${isFixedPost(team) ? ' · Fixed post' : ''}${isOnMealBreak(team) ? ' · On meal break' : ''}</title><circle class="venue-unit-hit" cx="${x}" cy="${markerY - 5}" r="23"/><ellipse class="venue-ball-shadow" cx="${x + 1}" cy="${markerY + 9}" rx="8" ry="2.5"/><circle class="venue-selection-ring" cx="${x}" cy="${markerY}" r="13"/><circle class="venue-unit-ball" cx="${x}" cy="${markerY}" r="8" fill="url(#venue-ball-${status})"/><text x="${x}" y="${markerY - 16}" text-anchor="middle" class="venue-marker-name"${fitLabel}>${escapeHTML(label)}</text></g>`;
-    };
+    const gradients = venueBallGradients('venue-ball');
     let drawing = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${mapWidth} ${height}" role="group" aria-labelledby="venue-svg-title"><title id="venue-svg-title">Bill Graham Civic Auditorium · ${focused ? floors[0].name : '3D view'}</title><defs>${gradients}</defs>`;
     for (const { level, y, floorStretch, frontStretch, posts } of [...layout].reverse()) {
         const count = teams.filter(team => venuePostForTeam(team)?.level === level.id).length;
@@ -1137,11 +1277,11 @@ function renderVenueMap() {
             drawing += `<g class="venue-team-layer" data-venue-post="${shape.id}">`;
             const positions = markerSpots(packing, floorStretch, frontStretch).map(([x, z]) => floorPoint(x, z));
             const above = shape.id === 'clinic-zone' || shape.side === 'Pit';
-            const labelY = members.length ? (above ? Math.min(...positions.map(point => point[1])) - 37 : Math.max(...positions.map(point => point[1])) + 25)
+            const labelY = members.length ? (above ? Math.min(...positions.map(point => point[1])) - 37 - (members.some(isOnMealBreak) ? 16 : 0) : Math.max(...positions.map(point => point[1])) + 25)
                 : cy + (above ? -37 : 4);
             drawing += `<text x="${cx}" y="${labelY}" text-anchor="middle" class="venue-side-label${shape.id === 'clinic-zone' ? ' venue-medical-label' : ''}">${shape.id === 'clinic-zone' ? '+ MEDICAL' : shape.label || shape.side.toUpperCase()}</text>`;
             for (let slot = 0; slot < members.length; slot++) {
-                drawing += teamMarker(members[slot], post, ...positions[slot], members.length > 1 ? labelWidth : 0);
+                drawing += venueTeamMarker(members[slot], post, ...positions[slot], members.length > 1 ? labelWidth : 0);
             }
             drawing += '</g>';
         }
@@ -1154,12 +1294,13 @@ function renderVenueMap() {
             const row = Math.floor(slot / outsideColumns);
             const rowSize = Math.min(outsideColumns, outsideMembers.length - row * outsideColumns);
             const x = mapCenter + (slot % outsideColumns - (rowSize - 1) / 2) * 88;
-            drawing += teamMarker(outsideMembers[slot], post, x, outsideCenterY + (row - (outsideRows - 1) / 2) * rowHeight);
+            drawing += venueTeamMarker(outsideMembers[slot], post, x, outsideCenterY + (row - (outsideRows - 1) / 2) * outsideRowHeight);
         }
         drawing += '</g></g>';
     }
     drawing += '</svg>';
     document.getElementById('venue-canvas').innerHTML = drawing;
+    renderUnassignedVenueTeams();
     document.getElementById('venue-rotate-left').disabled = venueAngle <= -30;
     document.getElementById('venue-rotate-right').disabled = venueAngle >= 42;
 }
@@ -1278,14 +1419,16 @@ function initializeVenue() {
             if (event.type === 'keydown') document.querySelector(`[data-venue-post="${destination}"] .venue-zone-surface`)?.focus({ preventScroll: true });
         } else venueMessage('Select a unit in the unit list first, then choose its destination.');
     };
-    canvas.addEventListener('click', activateMap);
-    canvas.addEventListener('keydown', event => {
-        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); activateMap(event); }
-    });
-    canvas.addEventListener('pointerdown', event => {
-        const unit = event.target.closest('[data-map-team]');
-        if (unit && event.button === 0) venueDrag = { id: unit.dataset.mapTeam, pointerId: event.pointerId, x: event.clientX, y: event.clientY, moving: false };
-    });
+    for (const surface of [canvas, document.getElementById('venue-unassigned-tray')]) {
+        surface.addEventListener('click', activateMap);
+        surface.addEventListener('keydown', event => {
+            if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); activateMap(event); }
+        });
+        surface.addEventListener('pointerdown', event => {
+            const unit = event.target.closest('[data-map-team]');
+            if (unit && event.button === 0) venueDrag = { id: unit.dataset.mapTeam, pointerId: event.pointerId, x: event.clientX, y: event.clientY, moving: false };
+        });
+    }
     document.addEventListener('pointermove', event => {
         if (!venueDrag || event.pointerId !== venueDrag.pointerId) return;
         if (!venueDrag.moving && Math.hypot(event.clientX - venueDrag.x, event.clientY - venueDrag.y) < 6) return;
@@ -1320,7 +1463,8 @@ function initializeVenue() {
     document.addEventListener('keydown', event => {
         if (event.key !== 'Escape') return;
         if (callActionTeam) { event.preventDefault(); hideCallActions(true); return; }
-        if (venueDrag) { suppressVenueClickUntil = Date.now() + 350; finishVenueDrag(); }
+        if (venueDrag) { suppressVenueClickUntil = Date.now() + 350; finishVenueDrag(); return; }
+        if (dispatchModeActive) { event.preventDefault(); exitDispatchMode(); return; }
         else if (activeView === 'venue' && selectedVenueTeam) { selectedVenueTeam = null; renderVenue(); venueMessage('Selection cleared.'); }
     });
 }
@@ -1334,10 +1478,12 @@ const timestampDateFormatter = new Intl.DateTimeFormat('en-US', {
 function updateClock(now = new Date()) {
     const parts = pacificFormatter.formatToParts(now);
     const part = type => parts.find(p => p.type === type).value;
-    const clock = document.getElementById('pacific-time');
-    clock.textContent = `${part('hour')}:${part('minute')}:${part('second')}`;
-    clock.dateTime = now.toISOString();
-    document.getElementById('pacific-zone').textContent = part('timeZoneName');
+    for (const id of ['pacific-time', 'dispatch-mode-clock']) {
+        const clock = document.getElementById(id);
+        clock.textContent = `${part('hour')}:${part('minute')}:${part('second')}`;
+        clock.dateTime = now.toISOString();
+    }
+    for (const id of ['pacific-zone', 'dispatch-mode-zone']) document.getElementById(id).textContent = part('timeZoneName');
 }
 updateClock();
 setInterval(() => { updateClock(); updateTimers(); }, 1000);
@@ -1376,6 +1522,7 @@ document.addEventListener('keydown', e => {
     }
 });
 initializeVenue();
+initializeDispatchMode();
 initializeCallActions();
 initializeDragScrolling();
 refresh();

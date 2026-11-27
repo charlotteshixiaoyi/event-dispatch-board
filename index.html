@@ -9,8 +9,8 @@
     <link rel="icon" href="./dispatch.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="./dispatch-192.png">
     <link rel="manifest" href="./manifest.webmanifest">
-    <link rel="stylesheet" href="./board.css?v=19">
-    <script src="./board.js?v=19" defer></script>
+    <link rel="stylesheet" href="./board.css?v=21">
+    <script src="./board.js?v=21" defer></script>
 </head>
 <body>
     <header class="masthead">
@@ -106,7 +106,17 @@
             <div id="venue-content" hidden>
             <div class="venue-heading">
                 <h2>Bill Graham Civic Auditorium</h2>
+                <div class="dispatch-mode-controls">
+                    <div id="dispatch-mode-status" class="dispatch-mode-status" hidden>
+                        <div class="level-meter dispatch-mode-level" data-empty="true" role="status" aria-atomic="true"><span>Level</span><strong data-level-value>0</strong><span class="sr-only">units available for dispatch</span></div>
+                        <div class="dispatch-mode-time" aria-label="Current Pacific time"><time id="dispatch-mode-clock">00:00:00</time><span id="dispatch-mode-zone">PT</span></div>
+                        <button type="button" id="dispatch-mode-undo" class="secondary-btn" disabled title="Undo last change (Ctrl/Cmd+Z)">Undo</button>
+                        <span class="dispatch-mode-hint">Esc to exit</span>
+                    </div>
+                    <button type="button" id="dispatch-mode-toggle" class="secondary-btn" aria-pressed="false" aria-controls="venue-content">Full-screen dispatch</button>
+                </div>
             </div>
+            <p id="dispatch-mode-save" class="dispatch-mode-save" role="status" data-error="false">Saved</p>
             <div class="venue-layout">
                 <div class="venue-map-card">
                     <div class="venue-map-toolbar">
@@ -130,10 +140,15 @@
                     </div>
                     <div id="venue-canvas" class="venue-canvas"></div>
                     <div class="venue-map-footer">
-                        <div class="venue-legend" aria-label="Unit markers"><span data-status="roaming">Roaming</span><span data-status="onscene">On call</span><span data-status="transporting">Transporting</span><span data-status="atclinic">At Main Medical</span><span data-status="fixed">Fixed post</span><span data-status="meal">Meal break</span></div>
+                        <div class="venue-legend" aria-label="Unit markers"><span data-status="roaming">Roaming</span><span data-status="onscene">On call</span><span data-status="transporting">Transporting</span><span data-status="atclinic">At Main Medical</span><span data-status="fixed"><svg viewBox="-7 -7 14 18" width="12" height="15" aria-hidden="true"><path d="M-4-5H4L2-1L5 2V3H1V8H-1V3H-5V2L-2-1Z"/></svg>Fixed post</span><span data-status="meal">Meal break</span></div>
                     </div>
                 </div>
                 <aside class="venue-sidebar" aria-label="Move venue units">
+                    <section id="venue-unassigned-panel" class="venue-unassigned-panel" aria-labelledby="venue-unassigned-title" hidden>
+                        <div class="venue-sidebar-heading"><h3 id="venue-unassigned-title">Unassigned on map</h3><span id="venue-unassigned-count" class="team-count">0</span></div>
+                        <p class="venue-unassigned-hint">Drag a ball to a post.</p>
+                        <div id="venue-unassigned-tray" class="venue-unassigned-tray" role="group" aria-label="Unassigned units"></div>
+                    </section>
                     <section class="venue-unit-panel">
                         <div class="venue-sidebar-heading"><h3>Units</h3><span id="venue-unit-count" class="team-count">0 placed</span></div>
                         <label class="sr-only" for="venue-search">Find a unit</label>

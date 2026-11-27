@@ -32,11 +32,23 @@ Select Bill Graham as the venue, then open **Venue 3D**. The board and map show 
 
 Drag a team onto its destination. You can also select it from the **Units** list, then tap the destination. Tapping a team ball changes its status.
 
+Fixed-post teams keep their operational status color and show a pin beside the ball. Teams on a meal break show a countdown above their ball. An overdue timer turns red and shows elapsed overdue time with a **+** prefix.
+
+Teams without a map post appear as balls in **Unassigned on map** beside the venue. Drag a ball onto a post, or select the team from **Units** and choose its destination. The tray scrolls independently and does not reduce the map's drawing area.
+
 Roaming teams sit in the open center of the 1st and 2nd floors, with one **Roaming** label on each. **Outside of Venue** appears as a small oval platform with a raised edge and grows when needed to fit its teams.
 
 The map starts with the 1st, 2nd, and 4th floors. Under **Add additional location**, check **Outside of Venue**, **Basement**, or **Third floor** as needed. Hiding a location keeps its team assignments.
 
 For **Pit**, choose **Stage left · Polk** or **Stage right · Larkin**. This moves the Pit area and all teams assigned there.
+
+### Use full-screen dispatch mode
+
+In **Venue 3D**, select **Full-screen dispatch**. The map fills the available screen, with unit search, assignments, meal countdowns, and the unassigned tray beside it. The compact header keeps **Undo** and the availability level available. Pacific time remains visible on larger screens. Setup controls, the roster, and shift notes are hidden while in this mode.
+
+Select **Exit full-screen** or press **Escape** to return. If a call-action menu is open, Escape closes that menu first. Leaving the browser's full-screen view also restores the normal layout. Browsers without full-screen support use the same focused layout inside the browser window.
+
+Entering or leaving the mode preserves assignments, timers, search, and the selected unit. The mode is not saved with the shift, so reloading opens the normal board.
 
 ### Track meal breaks
 
@@ -90,6 +102,7 @@ For standalone use, open `Event_EMS_Dispatch_Board.html` directly. Service worke
 | `Event_EMS_Dispatch_Board.html` | Generated HTML with embedded CSS, JavaScript, and SVG icon. |
 | `scripts/build-standalone.py` | Standalone HTML generator. |
 | `tests/venue-state.test.mjs` | State and interaction regression suite. |
+| `tests/dispatch-mode.test.mjs` | Full-screen lifecycle, map marker, countdown, and unassigned tray checks. |
 | `tests/dom-fixture.mjs` | In-memory DOM and event fixture used by the suite. |
 | `sw.js`, `manifest.webmanifest` | Service worker caching and install metadata. |
 | `.github/workflows/static.yml` | GitHub Pages deployment workflow. |
@@ -110,9 +123,10 @@ Run the regression suite from the project root:
 
 ```bash
 node tests/venue-state.test.mjs
+node tests/dispatch-mode.test.mjs
 ```
 
-The suite currently contains 62 checks for assignments, status transitions, drag events, persistence, backup compatibility, and Undo. It runs with Node's built-in modules and an in-memory DOM, without launching a browser.
+The suites currently contain 87 checks for assignments, status transitions, drag events, full-screen lifecycle and fallback, meal countdowns, unassigned map units, persistence, backup compatibility, and Undo. They run with Node's built-in modules and an in-memory DOM, without launching a browser.
 
 For UI changes, also verify responsive layout, keyboard interaction, native and pointer dragging, edge scrolling, and service worker behavior in a browser.
 
